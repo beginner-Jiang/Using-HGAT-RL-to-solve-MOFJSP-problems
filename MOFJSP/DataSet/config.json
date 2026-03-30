@@ -1,0 +1,42 @@
+{
+  "dataset_config": {
+    "num_instances": 100,
+    "train_val_test_split": [60, 20, 20],
+    "instance_sizes": [
+      {
+        "name": "small",
+        "jobs_range": [10, 20],
+        "machines_range": [5, 10],
+        "num_instances": 40
+      },
+      {
+        "name": "medium",
+        "jobs_range": [21, 40],
+        "machines_range": [11, 20],
+        "num_instances": 30
+      },
+      {
+        "name": "large",
+        "jobs_range": [41, 100],
+        "machines_range": [21, 30],
+        "num_instances": 30
+      }
+    ]
+  },
+  "generation_parameters": {
+    "operations_per_job_range": [3, 8],
+    "processing_time_range": [10, 50],
+    "due_date_factor_range": [1.2, 2.0],
+    "machine_flexibility": 0.5,
+    "setup_time_range": [0, 5],
+    "energy_consumption_range": [0.5, 1.5],
+    "machine_capability_levels": [1, 2, 3]
+  },
+  "output_config": {
+    "output_directory": "./mo_fjsp_instances",
+    "file_format": "txt",
+    "data_format": "extended_brandimarte",
+    "include_due_dates_in_data": true,
+    "include_machine_capabilities_in_data": true
+  }
+}

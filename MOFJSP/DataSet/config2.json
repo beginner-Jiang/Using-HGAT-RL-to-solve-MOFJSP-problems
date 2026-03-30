@@ -1,0 +1,96 @@
+{
+  "comparison_config": {
+    "description": "对比实验专用数据集，固定规模每种10个",
+    "fixed_sizes": [
+      {
+        "name": "small",
+        "jobs": 10,
+        "machines": 5,
+        "count": 10
+      },
+      {
+        "name": "small",
+        "jobs": 15,
+        "machines": 10,
+        "count": 10
+      },
+      {
+        "name": "small",
+        "jobs": 20,
+        "machines": 10,
+        "count": 10
+      },
+      {
+        "name": "medium",
+        "jobs": 25,
+        "machines": 15,
+        "count": 10
+      },
+      {
+        "name": "medium",
+        "jobs": 30,
+        "machines": 20,
+        "count": 10
+      },
+      {
+        "name": "medium",
+        "jobs": 40,
+        "machines": 20,
+        "count": 10
+      },
+      {
+        "name": "large",
+        "jobs": 50,
+        "machines": 25,
+        "count": 10
+      },
+      {
+        "name": "large",
+        "jobs": 75,
+        "machines": 25,
+        "count": 10
+      },
+      {
+        "name": "large",
+        "jobs": 100,
+        "machines": 30,
+        "count": 10
+      }
+    ],
+    "total_instances": 90
+  },
+  "generation_parameters": {
+    "operations_per_job_range": [
+      3,
+      8
+    ],
+    "processing_time_range": [
+      10,
+      50
+    ],
+    "due_date_factor_range": [
+      1.2,
+      2.0
+    ],
+    "machine_flexibility": 0.5,
+    "setup_time_range": [
+      0,
+      5
+    ],
+    "energy_consumption_range": [
+      0.5,
+      1.5
+    ],
+    "machine_capability_levels": [
+      1,
+      2,
+      3
+    ]
+  },
+  "output_config": {
+    "output_directory": "./comparison_instances",
+    "file_format": "txt",
+    "include_due_dates_in_data": true,
+    "include_machine_capabilities_in_data": true
+  }
+}
