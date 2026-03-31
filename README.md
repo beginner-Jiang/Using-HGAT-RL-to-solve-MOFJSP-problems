@@ -1,6 +1,6 @@
 # Project Documentation: Multi-Objective Flexible Job Shop Scheduling (MOFJSP)
 
-This project implements various methods for solving the Multi-Objective Flexible Job Shop Scheduling Problem (MOFJSP), including heuristic rules, metaheuristics, and deep reinforcement learning approaches, and proposes the **HGAT-HRL** (Heterogeneous Graph Attention Network + Hierarchical Reinforcement Learning) framework. The project is well-structured and all code can reproduce the results reported in the paper.
+This project implements various methods for solving the Multi-Objective Flexible Job Shop Scheduling Problem (MOFJSP), including heuristic rules, metaheuristics, and deep reinforcement learning approaches, and proposes the **HGAT+PPO** (Heterogeneous Graph Attention Network + Proximal Policy Optimization) framework. The project is well-structured and all code can reproduce the results reported in the paper.
 
 ---
 
@@ -24,7 +24,7 @@ Multiple solution methods are implemented and compared to validate the effective
 | `Heuristic/` | Six heuristic rules (SPT, EDD, LBD, FIFO, MOPNR, MWKR) |
 | `Meta_Heuristic/` | Metaheuristic algorithms (MOEA/D, NSGA-II) |
 | `Deep_Learning/` | Deep reinforcement learning methods (MLP+DQN, MLP+PPO, GAT+PPO) |
-| `PPO_HGAT/` | Proposed HGAT-HRL method and related tools |
+| `PPO_HGAT/` | Proposed HGAT+PPO method and related tools |
 | `model/` | Trained model weights |
 | `Figure_And_File/` | Output directory for experimental results (figures, metrics files) |
 | `DataSet/` | Dataset generation scripts (`Generate_DataSet.py`, `Generate_DataSet2.py`) |
@@ -96,7 +96,7 @@ Located in the `Deep_Learning/` directory:
 
 These methods use the same hyperparameters as in training. Trained model weights are saved in the corresponding subdirectories under `model/`.
 
-### 4.4 Proposed Method: HGAT-HRL
+### 4.4 Proposed Method: HGAT+PPO
 Located in the `PPO_HGAT/` directory:
 - `PPO_HGAT.py`: Main training script
 - `Graph.py`: Generates a Gantt chart for a 100×30 instance
@@ -147,7 +147,7 @@ Run `Generate_DataSet2.py` to generate the comparison dataset:
 `python PPO_MLP.py`      # Train PPO+MLP
 `python PPO_GAT.py`      # Train PPO+GAT
 
-- Train HGAT-HRL (proposed method):
+- Train HGAT+PPO (proposed method):
 
 `cd PPO_HGAT`
 `python PPO_HGAT.py`     # Train the proposed method
@@ -156,7 +156,7 @@ Run `Generate_DataSet2.py` to generate the comparison dataset:
 
 Enter the `Compare_Experiment` directory and execute:
 
-`python Experiment1.py`   # Heuristic rules vs HGAT-HRL
+`python Experiment1.py`   # Heuristic rules vs HGAT+PPO
 `python Experiment2.py`   # Metaheuristics vs deep reinforcement learning methods
 
 ### 5.5 Ablation Study
@@ -203,7 +203,7 @@ All experimental results are saved in the `Figure_And_File/` directory:
 | MLP+DQN | `model/dqn/dqn_model.pth` | Trained DQN model |
 | MLP+PPO | `model/ppo/ppo_model.pth` | Trained PPO+MLP model |
 | GAT+PPO | `model/ppo_gat/ppo_gat_best.pth` | Trained PPO+GAT model |
-| **HGAT-HRL** | `model/ppo_hgat/ppo_hgat_best.pth` | **Best model of the proposed method** |
+| **HGAT+PPO** | `model/ppo_hgat/ppo_hgat_best.pth` | **Best model of the proposed method** |
 | A1–A5 | `PPO_HGAT/Ablation_Experiment/model/A{1..5}/best.pth` | Trained models for ablation study variants |
 
 ---
@@ -224,6 +224,7 @@ All experimental results are saved in the `Figure_And_File/` directory:
 - Pre‑trained models are provided and can be used directly; retraining will automatically overwrite them.
 - We recommend using a GPU or cloud server for training; otherwise, training may be very slow.
 - Training results may vary slightly depending on the environment and the specific data used.
+- **This project is currently intended for experimental and research purposes only. Real-world deployment may encounter new issues not covered by the current implementation. The project will be updated and improved periodically to address potential limitations.**
 
 ---
 
