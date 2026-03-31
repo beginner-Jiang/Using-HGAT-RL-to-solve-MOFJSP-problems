@@ -1,10 +1,9 @@
 """
-基于同质析取图与PPO+KL的多目标柔性作业车间调度求解（多实例训练版）
-- 彻底修复索引越界问题：collate_states 和 GAT 层多重安全防护
-- 稳定奖励设计，避免剧烈波动
-- 梯度累积与保守更新策略
-- 增强多进程健壮性：超时退出、worker存活检测、队列异常处理
-训练结束后可能存在无法退出的问题，可手动结束，不影响整体训练结果
+Homogeneous disjunctive graph and PPO+KL multi-objective flexible job shop scheduling solution (multi-instance training version)
+- Completely fix index out-of-bounds issues: multiple safety guards in collate_states and GAT layers
+- Stable reward design to avoid drastic fluctuations
+- Gradient accumulation and conservative update strategy
+- Enhanced multi-process robustness: timeout exit, worker liveness detection, queue exception handling
 """
 
 import torch
@@ -28,21 +27,21 @@ import multiprocessing as mp
 from queue import Empty, Full
 import signal
 
-# 尝试导入numba，若不可用则回退到纯Python
+# Attempt to import numba, fall back to pure Python if not available
 try:
     from numba import jit, prange
     HAS_NUMBA = True
 except ImportError:
     HAS_NUMBA = False
-    print("警告: Numba未安装，将使用纯Python版本（可能较慢）")
+    print("Warning: Numba not installed, using pure Python version (may be slower)")
 
-# 混合精度
+# Mixed precision
 from torch.cuda.amp import autocast, GradScaler
 
 # ----------------------------
-# 1. 全局配置与常量
+# 1. Global configuration and constants
 # ----------------------------
-# 强制使用CPU，避免CUDA device-side assert
+# Force CPU to avoid CUDA device-side asserts
 DEVICE = torch.device("cpu")
 EPS = 1e-10
 W1, W2, W3 = 0.4, 0.3, 0.3
@@ -54,34 +53,34 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 # ----------------------------
-# 2. 配置类（稳定训练配置）
+# 2. Configuration class (stable training settings)
 # ----------------------------
 class Config:
     n_episodes = 10000
     model_save_dir = "../model/ppo_gat"
 
-    # ========== 稳定超参数 ==========
-    lr = 1e-3                       # 学习率
+    # ========== Stable hyperparameters ==========
+    lr = 1e-3                       # Learning rate
     lr_decay = 0.999
     min_lr = 1e-6
     gamma = 0.99
     gae_lambda = 0.95
-    kl_target = 0.01                 # 保守 KL 目标
-    beta_start = 0.1                  # 初始 beta
-    value_coef = 0.25                 # 价值系数
-    entropy_coef = 0.01               # 熵系数
+    kl_target = 0.01                 # Conservative KL target
+    beta_start = 0.1                  # Initial beta
+    value_coef = 0.25                 # Value coefficient
+    entropy_coef = 0.01               # Entropy coefficient
     entropy_decay = 0.999
-    max_grad_norm = 0.5               # 梯度裁剪
+    max_grad_norm = 0.5               # Gradient clipping
 
-    gat_hidden_dim = 64                # 网络容量
+    gat_hidden_dim = 64                # Network capacity
     gat_out_dim = 64
     policy_hidden_dim = 128
     gat_num_layers = 2
     gat_num_heads = 4
 
     value_clip = 0.1
-    reward_scaling = 1.0               # 不缩放奖励
-    reward_clip = 1.0                  # 奖励裁剪范围
+    reward_scaling = 1.0               # No reward scaling
+    reward_clip = 1.0                  # Reward clipping range
     use_state_norm = True
     use_disjunctive_edges = False
     instance_dir = "../mo_fjsp_instances"
@@ -90,7 +89,7 @@ class Config:
     stats_window = 100
     max_steps_per_episode = 2000
 
-    train_step_size = 256              # 训练步数阈值
+    train_step_size = 256              # Training step threshold
     ppo_epochs = 1
     use_amp = False
 
@@ -107,7 +106,7 @@ class Config:
 cfg = Config()
 
 # ----------------------------
-# 3. 文件读取模块（不变）
+# 3. File reading module (unchanged)
 # ----------------------------
 @dataclass
 class Operation:
@@ -124,7 +123,7 @@ def read_fjsp_instance(file_path: str):
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
-        print(f"错误：文件 {file_path} 未找到！")
+        print(f"Error: File {file_path} not found!")
         sys.exit(1)
 
     num_jobs, num_machines = map(int, lines[0].split())
@@ -158,7 +157,7 @@ def read_fjsp_instance(file_path: str):
 def load_all_instances(instance_dir: str, pattern: str):
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
 
     instance_list = []
     max_jobs = 0
@@ -182,7 +181,7 @@ def load_all_instances(instance_dir: str, pattern: str):
     return instance_list, max_jobs, max_machines, max_proc_time, max_due_date
 
 # ----------------------------
-# 4. MOFJSP 实例包装类
+# 4. MOFJSP instance wrapper class
 # ----------------------------
 class MOFJSPInstance:
     def __init__(self, jobs, machine_ids, due_dates, file_name, size):
@@ -201,7 +200,7 @@ class MOFJSPInstance:
         self.max_due_date = max(due_dates) if due_dates else 1.0
 
 # ----------------------------
-# 5. 状态归一化工具（CPU版）
+# 5. State normalization tool (CPU version)
 # ----------------------------
 class TorchRunningMeanStd:
     def __init__(self, shape=(), epsilon=1e-4, device=DEVICE):
@@ -241,7 +240,7 @@ class TorchRunningMeanStd:
         return (x - self.mean) / (torch.sqrt(self.var) + 1e-8)
 
 # ----------------------------
-# 6. Numba加速函数（不变）
+# 6. Numba acceleration functions (unchanged)
 # ----------------------------
 if HAS_NUMBA:
     @jit(nopython=True)
@@ -266,7 +265,7 @@ if HAS_NUMBA:
             node_features[idx, 2] = avail_vals[i]
         return node_features
 else:
-    # 纯Python回退
+    # Pure Python fallback
     def update_op_features_numba(node_features, unsched_indices, step_idx_vals, due_time_vals,
                                  job_id_norm_vals, ready_time_vals, is_available_vals):
         for i in range(len(unsched_indices)):
@@ -288,7 +287,7 @@ else:
         return node_features
 
 # ----------------------------
-# 7. 环境类（稳定奖励设计）
+# 7. Environment class (stable reward design)
 # ----------------------------
 class HomogeneousDisjunctiveGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_machines,
@@ -301,7 +300,7 @@ class HomogeneousDisjunctiveGraphEnv:
         self.cfg = cfg
         self.action_dim = global_max_jobs * global_max_machines
 
-        # 预计算静态信息
+        # Precompute static information
         self.op_machines = {}
         self.op_processing_times = {}
         self.job_op_lists = {}
@@ -320,7 +319,7 @@ class HomogeneousDisjunctiveGraphEnv:
         self.total_nodes = self.total_op_nodes + self.total_machine_nodes
         self.feature_dim = 8
 
-        # 节点索引映射
+        # Node index mapping
         self.op_to_idx = {}
         self.job_op_to_idx = np.full((instance.n_jobs, max(len(j) for j in instance.jobs)), -1, dtype=np.int64)
         self.idx_to_job = [0] * self.total_op_nodes
@@ -335,7 +334,7 @@ class HomogeneousDisjunctiveGraphEnv:
                 idx += 1
         self.mac_to_idx = {m: self.total_op_nodes + m for m in range(instance.n_machines)}
 
-        # 预计算静态边
+        # Precompute static edges
         src_all, tgt_all, feat_all = [], [], []
         self.op_to_edge_indices = {}
         for job in range(instance.n_jobs):
@@ -365,7 +364,7 @@ class HomogeneousDisjunctiveGraphEnv:
         self.feat_all = np.array(feat_all, dtype=np.float32)
         self.edge_valid = np.ones(len(src_all), dtype=bool)
 
-        # 预计算静态特征
+        # Precompute static features
         self.static_step_idx = np.zeros(self.total_op_nodes, dtype=np.float32)
         self.static_due_time = np.zeros(self.total_op_nodes, dtype=np.float32)
         self.static_job_id_norm = np.zeros(self.total_op_nodes, dtype=np.float32)
@@ -445,7 +444,7 @@ class HomogeneousDisjunctiveGraphEnv:
 
         w = [W1, W2, W3]
 
-        # 稳定奖励设计
+        # Stable reward design
         norm_p = p_time / (self.global_max_proc_time + EPS)
         machine_load_ratio = self.machine_load[machine] / (np.sum(self.machine_load) + EPS)
         load_penalty = machine_load_ratio
@@ -547,7 +546,7 @@ class HomogeneousDisjunctiveGraphEnv:
         }
 
 # ----------------------------
-# 8. GAT 网络（带多重索引安全防护）
+# 8. GAT network (with multiple index safety guards)
 # ----------------------------
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
@@ -577,19 +576,18 @@ class HomogeneousGATLayer(nn.Module):
         if num_nodes == 0:
             return torch.zeros_like(h)
 
-        # ---- 索引安全预处理 ----
+        # ---- Safe index preprocessing ----
         if edge_src.numel() > 0:
-            # 确保类型正确
+            # Ensure correct types
             edge_src = edge_src.long()
             edge_tgt = edge_tgt.long()
-            # 裁剪到合法范围
+            # Clip to valid range
             max_idx = num_nodes - 1
             edge_src = torch.clamp(edge_src, 0, max_idx)
             edge_tgt = torch.clamp(edge_tgt, 0, max_idx)
-            # 再次检查，若有仍不合法的（理论上不会），则过滤
+            # Double-check, filter if any still invalid (should not happen)
             valid = (edge_src >= 0) & (edge_src < num_nodes) & (edge_tgt >= 0) & (edge_tgt < num_nodes)
             if not valid.all():
-                # 记录并过滤
                 print(f"GATLayer: filtering {valid.logical_not().sum()} invalid edges after clamp.")
                 edge_src = edge_src[valid]
                 edge_tgt = edge_tgt[valid]
@@ -597,14 +595,14 @@ class HomogeneousGATLayer(nn.Module):
 
         Wh = self.W(h).view(-1, self.num_heads, self.head_dim)
 
-        # 如果没有有效边，直接返回线性变换
+        # If no valid edges, return linear transform
         if edge_feat.shape[0] == 0:
             return F.relu(Wh.view(-1, self.out_dim))
 
-        # ---- 安全索引操作 ----
+        # ---- Safe index operations ----
         try:
             We = self.W_edge(edge_feat).view(-1, self.num_heads, self.head_dim)
-            # 再次确认索引不越界（防止多线程竞争导致的意外）
+            # Double-check indices are still in bounds (prevent race conditions)
             if edge_src.max() >= num_nodes or edge_tgt.max() >= num_nodes:
                 print(f"GATLayer CRITICAL: index still out of bounds after filtering, max_src={edge_src.max()}, max_tgt={edge_tgt.max()}, num_nodes={num_nodes}. Falling back to linear.")
                 return F.relu(Wh.view(-1, self.out_dim))
@@ -657,7 +655,7 @@ class HomogeneousGAT(nn.Module):
             return torch.stack(global_embs, dim=0), h
 
 # ----------------------------
-# 9. 策略与价值网络
+# 9. Policy and value networks
 # ----------------------------
 class PolicyNetwork(nn.Module):
     def __init__(self, state_dim, action_dim, hidden_dim, temperature=0.5):
@@ -707,11 +705,11 @@ class ValueNetwork(nn.Module):
         return self.net(state_emb).squeeze(-1)
 
 # ----------------------------
-# 10. 辅助函数（彻底修复索引越界）
+# 10. Helper functions (completely fix index out-of-bounds)
 # ----------------------------
 def collate_states(states):
     """
-    合并多个图的状态，对每个图的边进行严格过滤，确保合并后索引完全合法。
+    Combine states of multiple graphs, strictly filter edges for each graph to ensure merged indices are completely legal.
     """
     node_feats = torch.cat([s['node_features'] for s in states], dim=0)
     node_counts = [s['node_features'].shape[0] for s in states]
@@ -726,16 +724,16 @@ def collate_states(states):
         feat_i = s['edge_features'].clone()
 
         if src_i.numel() > 0:
-            # 严格检查并过滤边索引
+            # Strictly check and filter edge indices
             valid_mask = (src_i >= 0) & (src_i < num_nodes_i) & (tgt_i >= 0) & (tgt_i < num_nodes_i)
             if not valid_mask.all():
-                # 有无效边，只保留有效的
+                # Keep only valid edges
                 src_i = src_i[valid_mask]
                 tgt_i = tgt_i[valid_mask]
                 feat_i = feat_i[valid_mask]
-            # 如果该图没有有效边，跳过
+            # If the graph has no valid edges, skip
             if src_i.numel() > 0:
-                # 加上偏移
+                # Add offset
                 src = src_i + offset
                 tgt = tgt_i + offset
                 edge_src.append(src)
@@ -752,7 +750,7 @@ def collate_states(states):
         edge_tgt = torch.empty(0, dtype=torch.long)
         edge_feats = torch.empty((0, 1))
 
-    # 合并后最终检查
+    # Final check after merging
     if edge_src.numel() > 0:
         max_allowed = node_feats.shape[0] - 1
         final_valid = (edge_src >= 0) & (edge_src <= max_allowed) & (edge_tgt >= 0) & (edge_tgt <= max_allowed)
@@ -768,7 +766,7 @@ def collate_states(states):
             'edge_features': edge_feats}, node_counts
 
 # ----------------------------
-# 11. PPO训练器（带异常捕获）
+# 11. PPO trainer (with exception handling)
 # ----------------------------
 class PPO_KL_Trainer:
     def __init__(self, gat, policy, value, cfg, state_norm=None):
@@ -834,7 +832,7 @@ class PPO_KL_Trainer:
             except Exception as e:
                 print(f"Load failed: {e}, using fresh parameters.")
         else:
-            print("从头开始训练。")
+            print("Starting training from scratch.")
 
     def compute_gae(self, rewards, values, next_values, dones):
         advantages, gae = [], 0
@@ -1045,7 +1043,7 @@ class PPO_KL_Trainer:
         return gpu_s
 
 # ----------------------------
-# 12. 多进程工作函数
+# 12. Multi-process worker function
 # ----------------------------
 def worker_process(worker_id, instance_tuples, max_jobs, max_machines, max_proc_time,
                    max_due_date, cfg, param_queue, data_queue, stop_event):
@@ -1074,7 +1072,7 @@ def worker_process(worker_id, instance_tuples, max_jobs, max_machines, max_proc_
     value = ValueNetwork(cfg.gat_out_dim, cfg.policy_hidden_dim).to('cpu')
     state_norm = TorchRunningMeanStd(shape=(cfg.gat_out_dim,), device='cpu') if cfg.use_state_norm else None
 
-    # 等待主进程下发初始参数
+    # Wait for initial parameters from main process
     try:
         params = param_queue.get(timeout=30)
     except Empty:
@@ -1167,7 +1165,7 @@ def worker_process(worker_id, instance_tuples, max_jobs, max_machines, max_proc_
                     print(f"Worker {worker_id}: data queue put failed: {e}, will retry later.")
                     time.sleep(1)
 
-            # 检查是否有新参数或课程更新
+            # Check for new parameters or curriculum updates
             try:
                 msg = param_queue.get_nowait()
                 if 'sizes' in msg:
@@ -1187,11 +1185,11 @@ def worker_process(worker_id, instance_tuples, max_jobs, max_machines, max_proc_
                 print(f"Worker {worker_id} error processing param: {e}")
 
     finally:
-        # 清理资源
+        # Clean up resources
         del gat, policy, value, state_norm
         gc.collect()
 
-    # 发送剩余轨迹
+    # Send remaining trajectories
     if local_trajectories:
         try:
             data_queue.put(local_trajectories, timeout=5)
@@ -1201,7 +1199,7 @@ def worker_process(worker_id, instance_tuples, max_jobs, max_machines, max_proc_
     print(f"Worker {worker_id} finished after {episode_count} episodes.")
 
 # ----------------------------
-# 13. 主训练函数
+# 13. Main training function
 # ----------------------------
 def train(cfg):
     print(f"Loading instances from {cfg.instance_dir}...")
@@ -1210,7 +1208,7 @@ def train(cfg):
     print(
         f"Loaded {len(instance_tuples)} instances. max_jobs={max_jobs}, max_machines={max_machines}, max_proc_time={max_proc_time}, max_due_date={max_due_date}")
 
-    # 初始化网络
+    # Initialize networks
     gat = HomogeneousGAT(8, 1, cfg.gat_hidden_dim, cfg.gat_out_dim,
                          num_layers=cfg.gat_num_layers, num_heads=cfg.gat_num_heads).to(DEVICE)
     policy = PolicyNetwork(cfg.gat_out_dim, max_jobs * max_machines, cfg.policy_hidden_dim, temperature=0.5).to(DEVICE)
@@ -1242,7 +1240,7 @@ def train(cfg):
         p.start()
         workers.append(p)
 
-    # 下发初始参数
+    # Send initial parameters
     for _ in range(cfg.num_workers):
         param_queue.put(init_params)
 
@@ -1261,7 +1259,7 @@ def train(cfg):
 
     try:
         while total_episodes < cfg.n_episodes:
-            # 定期检查worker存活状态
+            # Periodically check worker liveness
             if time.time() - last_worker_alive_check > 10:
                 alive = any(p.is_alive() for p in workers)
                 if not alive:
@@ -1272,7 +1270,7 @@ def train(cfg):
             try:
                 worker_trajectories = data_queue.get(timeout=10)
             except Empty:
-                # 超时后再次检查worker状态
+                # Timeout, check workers again
                 if not any(p.is_alive() for p in workers):
                     print("All workers have terminated, stopping training.")
                     break
@@ -1293,7 +1291,7 @@ def train(cfg):
                 normalized_rewards.append(norm_reward)
                 ep_rewards_buffer.append(ep_reward)
 
-                # 课程学习进度更新
+                # Curriculum learning progress update
                 if cfg.curriculum_enabled:
                     progress = total_episodes / cfg.n_episodes
                     new_sizes = None
@@ -1312,7 +1310,7 @@ def train(cfg):
                             except:
                                 pass
 
-                # 达到训练步数阈值
+                # Reach training step threshold
                 if total_steps >= cfg.train_step_size:
                     batch_size = len(trajectories_buffer)
                     stats = trainer.train_step(trajectories_buffer)
@@ -1324,7 +1322,7 @@ def train(cfg):
                         trainer._save_model(avg_reward)
 
                     if stats:
-                        # 将 KL 和损失重复 batch_size 次，使其与 episode 对齐
+                        # Repeat KL and loss batch_size times to align with episodes
                         kl_episodes.extend([stats['kl']] * batch_size)
                         loss_episodes.extend([stats['total_loss']] * batch_size)
 
@@ -1341,7 +1339,7 @@ def train(cfg):
                             'Steps': len(traj)
                         })
 
-                    # 下发新参数给所有worker
+                    # Send new parameters to all workers
                     new_params = {
                         'gat': gat.state_dict(),
                         'policy': policy.state_dict(),
@@ -1378,28 +1376,28 @@ def train(cfg):
         print("\nTraining interrupted by user. Stopping workers...")
     finally:
         stop_event.set()
-        # 清空队列，让 worker 能够顺利退出
-        # 先等待一小段时间，让 worker 响应 stop_event
+        # Clear queues to allow workers to exit smoothly
+        # Wait briefly for workers to respond to stop_event
         time.sleep(1)
-        # 持续从 data_queue 中取数据，直到所有 worker 结束
+        # Keep draining data_queue until all workers are done
         while any(p.is_alive() for p in workers):
             try:
-                # 尝试清空队列，避免 worker 阻塞在 put
+                # Try to clear the queue to avoid workers blocking on put
                 while not data_queue.empty():
                     data_queue.get_nowait()
             except:
                 pass
-            # 再等待一会
+            # Wait a bit
             time.sleep(1)
 
-        # 等待worker结束，最多等20秒
+        # Wait for workers to finish, timeout 20 seconds
         for p in workers:
             p.join(timeout=20)
             if p.is_alive():
                 p.terminate()
                 p.join(timeout=2)
 
-        # 清理队列（可能已经损坏，尝试安全关闭）
+        # Clean up queues (may be corrupted, attempt safe close)
         try:
             while not data_queue.empty():
                 data_queue.get_nowait()
@@ -1411,13 +1409,13 @@ def train(cfg):
         except:
             pass
 
-        # 处理最后一批未训练的轨迹（使用本地缓冲区，不依赖队列）
+        # Process the last untrained batch (use local buffer, not relying on queue)
         if trajectories_buffer:
             print("Training last batch...")
             batch_size = len(trajectories_buffer)
             stats = trainer.train_step(trajectories_buffer)
             if stats:
-                # 确保长度匹配，防止后续绘图错误
+                # Ensure lengths match to avoid plotting errors later
                 needed_kl = len(normalized_rewards) - len(kl_episodes)
                 if needed_kl > 0:
                     kl_episodes.extend([stats['kl']] * needed_kl)
@@ -1429,7 +1427,7 @@ def train(cfg):
                 else:
                     loss_episodes.extend([stats['total_loss']] * batch_size)
 
-        # 如果仍有长度不一致，补齐或截断
+        # If still length mismatch, pad or trim
         if len(kl_episodes) < len(normalized_rewards):
             kl_episodes.extend([kl_episodes[-1] if kl_episodes else 0] * (len(normalized_rewards) - len(kl_episodes)))
         elif len(kl_episodes) > len(normalized_rewards):
@@ -1442,7 +1440,7 @@ def train(cfg):
     pbar.close()
     print("Training Finished. Best Normalized Reward:", best_norm_reward)
 
-    # 绘制曲线
+    # Plot curves
     plt.figure(figsize=(15, 5))
 
     def moving_average(data, window_size=20):
@@ -1450,7 +1448,7 @@ def train(cfg):
             return data
         return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
-    # 奖励曲线
+    # Reward curve
     plt.subplot(1, 3, 1)
     plt.plot(normalized_rewards, alpha=0.3, color='blue', label='Raw')
     if len(normalized_rewards) >= 20:
@@ -1467,7 +1465,7 @@ def train(cfg):
         plt.ylim(y_min - margin, y_max + margin)
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
-    # KL 曲线
+    # KL curve
     plt.subplot(1, 3, 2)
     plt.plot(kl_episodes, alpha=0.3, color='orange', label='Raw')
     if len(kl_episodes) >= 20:
@@ -1484,7 +1482,7 @@ def train(cfg):
         plt.ylim(y_min - margin, y_max + margin)
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
-    # 损失曲线
+    # Loss curve
     plt.subplot(1, 3, 3)
     plt.plot(loss_episodes, alpha=0.3, color='red', label='Raw')
     if len(loss_episodes) >= 20:

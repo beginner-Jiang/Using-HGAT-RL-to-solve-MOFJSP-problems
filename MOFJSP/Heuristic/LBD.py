@@ -1,5 +1,5 @@
 """
-启发式规则实现：负载最小优先-LBD
+Heuristic rule implementation: Least Load First - LBD
 """
 import numpy as np
 from typing import List, Dict, Tuple, Any
@@ -8,86 +8,86 @@ import matplotlib
 import pandas as pd
 
 
-# 数据结构定义
+# Data structure definition
 
 class Operation:
-    """工序类"""
+    """Operation class"""
 
     def __init__(self, job_id: int, op_id: int, machine_times: Dict[int, float]):
         self.job_id = job_id
         self.op_id = op_id
-        self.machine_times = machine_times  # 机器ID -> 加工时间
+        self.machine_times = machine_times  # Machine ID -> Processing time
         self.assigned_machine = None
         self.start_time = 0
         self.end_time = 0
         self.is_scheduled = False
 
     def get_available_machines(self) -> List[int]:
-        """返回可用机器列表"""
+        """Returns the list of available machines"""
         return list(self.machine_times.keys())
 
     def get_processing_time(self, machine_id: int) -> float:
-        """返回指定机器上的加工时间"""
+        """Returns processing time on the specified machine"""
         return self.machine_times.get(machine_id, float('inf'))
 
 
 class Job:
-    """作业类"""
+    """Job class"""
 
     def __init__(self, job_id: int, operations: List[Operation], due_date: float):
         self.job_id = job_id
         self.operations = operations
         self.due_date = due_date
-        self.current_op_index = 0  # 当前待调度的工序索引
+        self.current_op_index = 0  # Index of the current operation to be scheduled
 
     def get_current_operation(self) -> Operation:
-        """返回当前待调度的工序"""
+        """Returns the current operation to be scheduled"""
         if self.current_op_index < len(self.operations):
             return self.operations[self.current_op_index]
         return None
 
     def complete_current_operation(self):
-        """标记当前工序完成，准备下一个工序"""
+        """Marks the current operation as completed and prepares for the next one"""
         if self.current_op_index < len(self.operations):
             self.current_op_index += 1
 
     def is_completed(self) -> bool:
-        """检查作业是否全部完成"""
+        """Checks if the job is fully completed"""
         return self.current_op_index >= len(self.operations)
 
     def get_completion_time(self) -> float:
-        """返回作业完成时间（最后一道工序的完成时间）"""
+        """Returns the job completion time (end time of the last operation)"""
         if len(self.operations) == 0:
             return 0
         return self.operations[-1].end_time
 
 
 class Machine:
-    """机器类"""
+    """Machine class"""
 
     def __init__(self, machine_id: int):
         self.machine_id = machine_id
-        self.schedule = []  # 已安排的工序列表 [(start_time, end_time, operation)]
-        self.available_time = 0  # 机器最早可用时间
-        self.current_load = 0  # 当前负载（已安排的加工时间总和）
+        self.schedule = []  # List of scheduled operations [(start_time, end_time, operation)]
+        self.available_time = 0  # Earliest available time of the machine
+        self.current_load = 0  # Current load (sum of processing time of scheduled operations)
 
     def assign_operation(self, operation: Operation, start_time: float) -> float:
-        """将工序分配到机器上，返回完成时间"""
-        # 检查机器是否可用
+        """Assigns an operation to the machine, returns the completion time"""
+        # Check if the machine is available
         processing_time = operation.get_processing_time(self.machine_id)
         if processing_time == float('inf'):
             return float('inf')
 
-        # 确保开始时间不早于机器可用时间
+        # Ensure start time is not earlier than machine available time
         actual_start = max(start_time, self.available_time)
         end_time = actual_start + processing_time
 
-        # 更新机器状态
+        # Update machine status
         self.schedule.append((actual_start, end_time, operation))
         self.available_time = end_time
         self.current_load += processing_time
 
-        # 更新工序状态
+        # Update operation status
         operation.assigned_machine = self.machine_id
         operation.start_time = actual_start
         operation.end_time = end_time
@@ -96,18 +96,18 @@ class Machine:
         return end_time
 
     def get_total_load(self) -> float:
-        """返回机器总负载（加工时间总和）"""
+        """Returns the total load of the machine (sum of processing times)"""
         return self.current_load
 
     def get_earliest_available_time(self) -> float:
-        """返回机器最早可用时间"""
+        """Returns the machine's earliest available time"""
         return self.available_time
 
 
-# LBD调度算法实现
+# LBD scheduling algorithm implementation
 
 class LBDScheduler:
-    """基于LBD（最小负载优先）规则的调度器"""
+    """Scheduler based on LBD (Least Load First) rule"""
 
     def __init__(self, jobs: List[Job], machines: List[Machine]):
         self.jobs = jobs
@@ -117,7 +117,7 @@ class LBDScheduler:
         self.total_operations = sum(len(job.operations) for job in jobs)
 
     def get_available_operations(self) -> List[Operation]:
-        """获取所有可调度的工序（作业的第一个未调度工序）"""
+        """Gets all schedulable operations (first unscheduled operation of each job)"""
         available_ops = []
         for job in self.jobs:
             if not job.is_completed():
@@ -127,27 +127,27 @@ class LBDScheduler:
         return available_ops
 
     def find_best_machine_for_operation(self, operation: Operation, job_ready_time: float) -> Tuple[int, float, float]:
-        """为工序找到最佳机器：当前负载最小的可用机器"""
+        """Finds the best machine for the operation: the available machine with the smallest current load"""
         best_machine_id = -1
         best_completion_time = float('inf')
         best_machine_load = float('inf')
 
-        # 遍历所有机器，找到负载最小的可用机器
+        # Iterate over all machines to find the available machine with the smallest load
         for machine in self.machines:
-            # 检查机器是否可用
+            # Check if the machine is available
             processing_time = operation.get_processing_time(machine.machine_id)
             if processing_time == float('inf'):
                 continue
 
-            # LBD规则：优先选择当前负载最小的机器
+            # LBD rule: prioritize the machine with the smallest current load
             machine_load = machine.get_total_load()
 
-            # 计算在该机器上的完成时间
+            # Calculate completion time on this machine
             start_time = max(job_ready_time, machine.get_earliest_available_time())
             completion_time = start_time + processing_time
 
-            # LBD规则：选择负载最小的机器
-            # 如果负载相同，选择完成时间最早的
+            # LBD rule: choose the machine with the smallest load
+            # If loads are equal, choose the one with earlier completion time
             if machine_load < best_machine_load or (
                     machine_load == best_machine_load and completion_time < best_completion_time):
                 best_machine_id = machine.machine_id
@@ -157,32 +157,33 @@ class LBDScheduler:
         return best_machine_id, best_completion_time, best_machine_load
 
     def select_operation_for_scheduling(self, available_ops: List[Operation]) -> Operation:
-        """从可调度的工序中选择一个进行调度"""
-        # LBD规则需要同时考虑机器负载和工序特性
-        # 这里我们采用：对于每个工序，找到负载最小的机器，然后选择"工序在负载最小机器上的加工时间"最短的工序
+        """Selects an operation for scheduling from the available ones"""
+        # LBD rule needs to consider both machine load and operation characteristics
+        # Here we adopt: For each operation, find the machine with the smallest load,
+        # then select the operation with the shortest "processing time on the machine with the smallest load"
         best_operation = None
         best_machine_load = float('inf')
         best_processing_time = float('inf')
 
         for operation in available_ops:
-            # 获取作业就绪时间
+            # Get job ready time
             job = self.jobs[operation.job_id]
             job_ready_time = 0
             if operation.op_id > 0:
                 prev_op = job.operations[operation.op_id - 1]
                 job_ready_time = prev_op.end_time
 
-            # 找到负载最小的机器
+            # Find the machine with the smallest load
             machine_id, _, machine_load = self.find_best_machine_for_operation(operation, job_ready_time)
 
             if machine_id == -1:
                 continue
 
-            # 获取在该机器上的加工时间
+            # Get processing time on that machine
             processing_time = operation.get_processing_time(machine_id)
 
-            # 选择标准：优先选择机器负载最小的工序
-            # 如果负载相同，选择加工时间最短的
+            # Selection criteria: prioritize operations on machines with smaller loads
+            # If loads are equal, choose the one with shorter processing time
             if (machine_load < best_machine_load or
                     (machine_load == best_machine_load and processing_time < best_processing_time)):
                 best_operation = operation
@@ -192,20 +193,20 @@ class LBDScheduler:
         return best_operation
 
     def schedule_step(self) -> bool:
-        """执行一步调度，返回是否还有工序需要调度"""
+        """Executes one scheduling step, returns whether there are still operations to be scheduled"""
         available_ops = self.get_available_operations()
 
         if not available_ops:
             return False
 
-        # 1. LBD规则：选择机器负载最小的工序
+        # 1. LBD rule: Select the operation on the machine with the smallest load
         selected_op = self.select_operation_for_scheduling(available_ops)
 
         if selected_op is None:
-            # 如果没有找到合适的工序，尝试选择第一个可用的工序
+            # If no suitable operation is found, try selecting the first available operation
             selected_op = available_ops[0]
 
-        # 2. 为工序找到负载最小的机器
+        # 2. Find the machine with the smallest load for the selected operation
         job = self.jobs[selected_op.job_id]
         job_ready_time = 0
         if selected_op.op_id > 0:
@@ -215,42 +216,42 @@ class LBDScheduler:
         best_machine_id, completion_time, _ = self.find_best_machine_for_operation(selected_op, job_ready_time)
 
         if best_machine_id == -1:
-            # 如果没有可用的机器，跳过这个工序
-            # 标记为已调度但实际上未安排（这种情况不应该发生，因为我们已经检查了可用机器）
+            # If no available machine, skip this operation
+            # Mark as scheduled but actually not assigned (this should not happen as we checked available machines)
             selected_op.is_scheduled = True
             job.complete_current_operation()
             self.completed_operations += 1
             return True
 
-        # 3. 分配工序到机器
+        # 3. Assign the operation to the machine
         best_machine = self.machines[best_machine_id]
         actual_completion_time = best_machine.assign_operation(selected_op, job_ready_time)
 
-        # 4. 更新作业状态
+        # 4. Update job status
         if actual_completion_time != float('inf'):
             job.complete_current_operation()
             self.completed_operations += 1
 
-        # 5. 更新当前时间（所有机器的最早可用时间的最小值）
+        # 5. Update current time (minimum of earliest available times of all machines)
         machine_times = [machine.available_time for machine in self.machines]
         self.current_time = min(machine_times) if machine_times else self.current_time
 
         return True
 
     def run_schedule(self):
-        """运行完整调度"""
+        """Runs the complete schedule"""
         while self.schedule_step():
             pass
 
     def calculate_metrics(self) -> Dict[str, float]:
-        """计算调度性能指标"""
-        # 1. 最大完工时间
+        """Calculates scheduling performance metrics"""
+        # 1. Makespan
         completion_times = []
         for job in self.jobs:
             completion_times.append(job.get_completion_time())
         makespan = max(completion_times)
 
-        # 2. 机器负载均衡度（标准差）
+        # 2. Machine load balance (Standard Deviation)
         machine_loads = [machine.get_total_load() for machine in self.machines]
         avg_load = np.mean(machine_loads)
         if avg_load == 0:
@@ -258,7 +259,7 @@ class LBDScheduler:
         else:
             load_balance = np.sqrt(np.mean([(load - avg_load) ** 2 for load in machine_loads])) / avg_load
 
-        # 3. 总拖期时间
+        # 3. Total tardiness
         total_tardiness = 0
         for job in self.jobs:
             completion_time = job.get_completion_time()
@@ -272,79 +273,79 @@ class LBDScheduler:
         }
 
     def print_schedule(self):
-        """打印调度结果"""
+        """Prints the schedule result"""
         print("=" * 80)
-        print("LBD调度结果（最小负载优先）")
+        print("LBD Schedule Result (Least Load First)")
         print("=" * 80)
 
-        # 按机器打印
+        # Print by machine
         for machine in self.machines:
-            print(f"\n机器 {machine.machine_id} (总负载: {machine.get_total_load():.1f}):")
-            machine.schedule.sort(key=lambda x: x[0])  # 按开始时间排序
+            print(f"\nMachine {machine.machine_id} (Total Load: {machine.get_total_load():.1f}):")
+            machine.schedule.sort(key=lambda x: x[0])  # Sort by start time
             for start, end, op in machine.schedule:
-                print(f"  作业{op.job_id}-工序{op.op_id}: [{start:.1f} - {end:.1f}]")
+                print(f"  Job{op.job_id}-Operation{op.op_id}: [{start:.1f} - {end:.1f}]")
 
-        # 打印性能指标
+        # Print performance metrics
         metrics = self.calculate_metrics()
         print(f"\n{'=' * 80}")
-        print("性能指标:")
-        print(f"  最大完工时间 (Makespan): {metrics['makespan']:.2f}")
-        print(f"  机器负载均衡度: {metrics['load_balance']:.4f}")
-        print(f"  总拖期时间: {metrics['total_tardiness']:.2f}")
+        print("Performance Metrics:")
+        print(f"  Makespan: {metrics['makespan']:.2f}")
+        print(f"  Machine Load Balance: {metrics['load_balance']:.4f}")
+        print(f"  Total Tardiness: {metrics['total_tardiness']:.2f}")
 
-        # 打印机器负载分布
+        # Print machine load distribution
         print(f"\n{'=' * 80}")
-        print("机器负载分布:")
+        print("Machine Load Distribution:")
         total_load = 0
         for machine in self.machines:
             load = machine.get_total_load()
             total_load += load
-            print(f"  机器 {machine.machine_id}: {load:.1f}")
-        print(f"  总负载: {total_load:.1f}")
-        print(f"  平均负载: {total_load / len(self.machines):.1f}")
+            print(f"  Machine {machine.machine_id}: {load:.1f}")
+        print(f"  Total Load: {total_load:.1f}")
+        print(f"  Average Load: {total_load / len(self.machines):.1f}")
 
         return metrics
 
 
-# 文件读取模块
+# File reading module
 
 def read_fjsp_instance(file_path: str) -> Tuple[List[Job], List[Machine]]:
     """
-    读取标准 MOFJSP 数据文件（扩展 Brandimarte 格式）
-    文件格式：
-        第一行: 作业数  机器数
-        接下来 N 行: 每个作业的工序信息
-            - 第一个整数: 该作业的工序数量 O
-            - 后续 O 组: 每组以 k 开头，后跟 k 对 (机器ID, 加工时间)
-        然后一行: N 个整数，每个作业的交货期
-        可能还有额外行（如柔性矩阵等），忽略
-    返回: (jobs列表, machines列表)
+    Reads a standard MOFJSP data file (extended Brandimarte format)
+    File format:
+        First line: Number of jobs   Number of machines
+        Next N lines: Process information for each job
+            - First integer: Number of operations O for this job
+            - Following O groups: Each group starts with k, followed by k pairs (MachineID, Processing Time)
+        Then one line: N integers, due date for each job
+        There may be additional lines (e.g., flexibility matrix), ignore them.
+    Returns: (list of jobs, list of machines)
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            # 过滤空行和注释行
+            # Filter empty lines and comment lines
             lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
-        print(f"错误：文件 {file_path} 未找到！")
+        print(f"Error: File {file_path} not found!")
         exit(1)
 
     if len(lines) < 2:
-        raise ValueError("文件格式错误：行数不足")
+        raise ValueError("File format error: insufficient lines")
 
-    # 第一行：作业数 机器数
+    # First line: Number of jobs, Number of machines
     num_jobs, num_machines = map(int, lines[0].split())
     machines = [Machine(i) for i in range(num_machines)]
 
-    # 接下来的 num_jobs 行是作业工序数据
+    # The next num_jobs lines are job operation data
     job_lines = lines[1:1 + num_jobs]
     if len(job_lines) != num_jobs:
-        raise ValueError(f"文件格式错误：期望 {num_jobs} 个作业行，实际得到 {len(job_lines)} 行")
+        raise ValueError(f"File format error: expected {num_jobs} job lines, got {len(job_lines)} lines")
 
-    # 再下一行是交货期（必须存在）
+    # The next line is due dates (must exist)
     due_date_line = lines[1 + num_jobs]
     due_dates = list(map(float, due_date_line.split()))
     if len(due_dates) != num_jobs:
-        raise ValueError(f"文件格式错误：期望 {num_jobs} 个交货期，实际得到 {len(due_dates)} 个")
+        raise ValueError(f"File format error: expected {num_jobs} due dates, got {len(due_dates)}")
 
     jobs = []
     for job_idx in range(num_jobs):
@@ -356,14 +357,14 @@ def read_fjsp_instance(file_path: str) -> Tuple[List[Job], List[Machine]]:
         operations = []
         for op_idx in range(num_ops):
             if idx >= len(nums):
-                raise ValueError(f"作业 {job_idx} 的数据不完整")
+                raise ValueError(f"Job {job_idx} data incomplete")
             k = nums[idx]
             idx += 1
             machine_times = {}
             for _ in range(k):
                 if idx + 1 >= len(nums):
-                    raise ValueError(f"作业 {job_idx} 工序 {op_idx} 的机器数据不足")
-                machine_id = nums[idx] - 1  # 转换为0索引
+                    raise ValueError(f"Insufficient machine data for Job {job_idx} operation {op_idx}")
+                machine_id = nums[idx] - 1  # Convert to 0-index
                 processing_time = float(nums[idx + 1])
                 if 0 <= machine_id < num_machines:
                     machine_times[machine_id] = processing_time
@@ -377,28 +378,28 @@ def read_fjsp_instance(file_path: str) -> Tuple[List[Job], List[Machine]]:
     return jobs, machines
 
 
-# 可视化函数
+# Visualization function
 
 def visualize_gantt_chart(jobs: List[Job], machines: List[Machine],
                           title="LBD Rule - Gantt Chart", save_path=None):
-    """绘制甘特图并保存"""
+    """Draws and saves the Gantt chart"""
     fig, ax = plt.subplots(figsize=(14, 8))
 
     colors = ['#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', '#EF476F', '#073B4C', '#118AB2']
 
-    # 为作业分配颜色
+    # Assign colors to jobs
     job_colors = {}
     for i, job in enumerate(jobs):
         job_colors[job.job_id] = colors[i % len(colors)]
 
-    # 为每一台机器绘制调度
+    # Draw schedule for each machine
     for machine in machines:
         y_pos = machine.machine_id
         for start, end, op in machine.schedule:
             color = job_colors[op.job_id]
             ax.barh(y_pos, end - start, left=start, height=0.6,
                     color=color, edgecolor='black')
-            # 工序标签移动
+            # Operation label moved
 
     ax.set_xlabel('Time')
     ax.set_ylabel('Machine')
@@ -422,48 +423,48 @@ def visualize_gantt_chart(jobs: List[Job], machines: List[Machine],
     plt.show()
 
 
-# 主函数
+# Main function
 
 def main():
-    """主函数：读取文件，执行LBD调度，展示并保存甘特图，导出指标到Excel"""
+    """Main function: reads file, executes LBD scheduling, displays and saves Gantt chart, exports metrics to Excel"""
     print("=" * 80)
-    print("基于LBD（最小负载优先）规则的柔性作业车间调度（文件驱动）")
+    print("Flexible Job Shop Scheduling based on LBD (Least Load First) Rule (File-driven)")
     print("=" * 80)
 
-    # 指定数据文件路径
-    file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"  # 确保文件存在
+    # Specify the data file path
+    file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"  # Ensure the file exists
 
-    # 1. 从文件读取调度实例
+    # 1. Read the scheduling instance from the file
     try:
         jobs, machines = read_fjsp_instance(file_path)
     except Exception as e:
-        print(f"读取文件失败: {e}")
+        print(f"Failed to read file: {e}")
         return
 
-    print("\n问题描述:")
-    print(f"  作业数量: {len(jobs)}")
-    print(f"  机器数量: {len(machines)}")
+    print("\nProblem Description:")
+    print(f"  Number of Jobs: {len(jobs)}")
+    print(f"  Number of Machines: {len(machines)}")
 
     total_ops = sum(len(job.operations) for job in jobs)
-    print(f"  总工序数量: {total_ops}")
+    print(f"  Total Number of Operations: {total_ops}")
 
-    # 2. 执行LBD调度
+    # 2. Execute LBD scheduling
     scheduler = LBDScheduler(jobs, machines)
     scheduler.run_schedule()
 
-    # 3. 打印调度结果并获取指标
+    # 3. Print scheduling results and obtain metrics
     lbd_metrics = scheduler.print_schedule()
 
-    # 4. 绘制并保存甘特图
-    print("\n正在生成甘特图...")
+    # 4. Draw and save Gantt chart
+    print("\nGenerating Gantt Chart...")
     visualize_gantt_chart(jobs, machines, save_path="../Figure_And_File/Heuristic/LBD/gantt_chart_lbd.png")
 
-    # 5. 将性能指标导出为Excel文件
+    # 5. Export performance metrics to an Excel file
     try:
-        # 创建汇总指标DataFrame
+        # Create summary metrics DataFrame
         summary_data = {
-            '指标': ['最大完工时间 (Makespan)', '机器负载均衡度', '总拖期时间'],
-            '数值': [
+            'Metric': ['Makespan', 'Machine Load Balance', 'Total Tardiness'],
+            'Value': [
                 lbd_metrics['makespan'],
                 lbd_metrics['load_balance'],
                 lbd_metrics['total_tardiness']
@@ -471,38 +472,38 @@ def main():
         }
         df_summary = pd.DataFrame(summary_data)
 
-        # 创建拖期作业详情DataFrame（从jobs重新计算）
+        # Create tardy job details DataFrame (recalculated from jobs)
         tardy_jobs_list = []
         for job in jobs:
             completion_time = job.get_completion_time()
             tardiness = max(0, completion_time - job.due_date)
             if tardiness > 0:
                 tardy_jobs_list.append({
-                    '作业ID': job.job_id,
-                    '完成时间': completion_time,
-                    '交货期': job.due_date,
-                    '拖期时间': tardiness
+                    'Job ID': job.job_id,
+                    'Completion Time': completion_time,
+                    'Due Date': job.due_date,
+                    'Tardiness': tardiness
                 })
-        df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'提示': ['无拖期作业']})
+        df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'Note': ['No tardy jobs']})
 
-        # 写入Excel文件，包含两个sheet
+        # Write to Excel file, containing two sheets
         excel_file = '../Figure_And_File/Heuristic/LBD/LBD_metrics.xlsx'
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
             df_summary.to_excel(writer, sheet_name='Summary', index=False)
             df_tardy.to_excel(writer, sheet_name='TardyJobs', index=False)
 
-        print(f"\n性能指标已成功导出到 {excel_file}")
+        print(f"\nPerformance metrics have been successfully exported to {excel_file}")
     except ImportError:
-        print("\n警告：未安装 pandas 或 openpyxl，无法导出Excel。请安装：pip install pandas openpyxl")
+        print("\nWarning: pandas or openpyxl not installed, cannot export to Excel. Please install: pip install pandas openpyxl")
     except Exception as e:
-        print(f"\n导出Excel时出错：{e}")
+        print(f"\nError exporting to Excel: {e}")
 
-    # 6. 验证调度可行性
+    # 6. Verify schedule feasibility
     print("\n" + "=" * 80)
-    print("调度可行性验证:")
+    print("Schedule Feasibility Verification:")
     print("-" * 80)
 
-    # 检查所有工序是否都被调度
+    # Check if all operations are scheduled
     unscheduled_ops = []
     for job in jobs:
         for op in job.operations:
@@ -510,16 +511,16 @@ def main():
                 unscheduled_ops.append((job.job_id, op.op_id))
 
     if unscheduled_ops:
-        print(f"  警告: {len(unscheduled_ops)} 个工序未被调度")
+        print(f"  Warning: {len(unscheduled_ops)} operations are not scheduled")
         for job_id, op_id in unscheduled_ops:
-            print(f"    作业{job_id}-工序{op_id}")
+            print(f"    Job{job_id}-Operation{op_id}")
     else:
-        print("  所有工序都已成功调度")
+        print("  All operations have been successfully scheduled")
 
-    # 检查机器冲突
+    # Check for machine conflicts
     conflicts = []
     for machine in machines:
-        schedule = sorted(machine.schedule, key=lambda x: x[0])  # 按开始时间排序
+        schedule = sorted(machine.schedule, key=lambda x: x[0])  # Sort by start time
         for i in range(1, len(schedule)):
             prev_end = schedule[i - 1][1]
             curr_start = schedule[i][0]
@@ -527,11 +528,11 @@ def main():
                 conflicts.append((machine.machine_id, i - 1, i))
 
     if conflicts:
-        print(f"  警告: 发现 {len(conflicts)} 处机器时间冲突")
+        print(f"  Warning: Found {len(conflicts)} machine time conflicts")
     else:
-        print("  无机器时间冲突")
+        print("  No machine time conflicts")
 
-    print("\nLBD调度完成!")
+    print("\nLBD scheduling completed!")
 
 
 if __name__ == "__main__":

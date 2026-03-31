@@ -1,6 +1,6 @@
 """
-PPO+MLP求解实现程序
-使用最传统的PPO版本非变种，结合多层感知机求解
+PPO+MLP Solution Implementation
+Uses the most traditional PPO version (no variants) combined with a multi-layer perceptron
 """
 
 import torch
@@ -33,11 +33,11 @@ class Config:
     value_lr_scale = 1.0
     warmup_steps = 1000
 
-    # 熵系数（线性衰减）
+    # Entropy coefficient (linear decay)
     entropy_start = 0.02
     entropy_end = 0.0005
 
-    # PPO 参数
+    # PPO parameters
     gamma = 0.99
     gae_lambda = 0.98
     clip_eps = 0.2
@@ -47,7 +47,7 @@ class Config:
     value_coef = 0.5
     entropy_coef = entropy_start
 
-    # 网络与训练
+    # Network and training
     batch_size = 2048
     n_epochs = 5
     hidden_dim = 512
@@ -56,12 +56,12 @@ class Config:
     episodes_per_update = 100
     objective_weights = [0.4, 0.3, 0.3]
 
-    # 模型保存
+    # Model saving
     model_dir = "../model/ppo"
     model_name = "ppo_model.pth"
     model_path = os.path.join(model_dir, model_name)
 
-    # 数据集
+    # Dataset
     epochs = 30000
     max_jobs = None
     max_machines = None
@@ -70,12 +70,12 @@ class Config:
     instance_dir = "../mo_fjsp_instances"
     file_pattern = "mo_fjsp_*_train.txt"
 
-    # 状态归一化
+    # State normalization
     use_state_norm = True
     reward_scaling = 20.0
     reward_clip = 20.0
 
-    # 统计与梯度
+    # Statistics and gradient
     stats_window = 100
     value_clip = 0.2
     weight_decay = 1e-5
@@ -83,7 +83,7 @@ class Config:
 
     precollect_episodes = 50
 
-    # 课程学习
+    # Curriculum learning
     enable_curriculum = True
     curriculum_stages = [
         (0.0, 0.3, ['small']),
@@ -91,7 +91,7 @@ class Config:
         (0.6, 1.0, ['small', 'medium', 'large'])
     ]
 
-    # 混合精度
+    # Mixed precision
     use_amp = False
 
 
@@ -104,7 +104,7 @@ def set_seed(seed=42):
 
 
 
-# 文件读取与实例包装
+# File reading and instance wrapper
 
 @dataclass
 class Operation:
@@ -124,23 +124,23 @@ def read_fjsp_instance(file_path: str):
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
-        print(f"错误：文件 {file_path} 未找到！")
+        print(f"Error: File {file_path} not found!")
         exit(1)
 
     if len(lines) < 2:
-        raise ValueError("文件格式错误：行数不足")
+        raise ValueError("File format error: insufficient lines")
 
     num_jobs, num_machines = map(int, lines[0].split())
     machine_ids = list(range(num_machines))
 
     job_lines = lines[1:1 + num_jobs]
     if len(job_lines) != num_jobs:
-        raise ValueError(f"期望 {num_jobs} 个作业行，实际得到 {len(job_lines)} 行")
+        raise ValueError(f"Expected {num_jobs} job lines, got {len(job_lines)}")
 
     due_date_line = lines[1 + num_jobs]
     due_dates = list(map(float, due_date_line.split()))
     if len(due_dates) != num_jobs:
-        raise ValueError(f"期望 {num_jobs} 个交货期，实际得到 {len(due_dates)} 个")
+        raise ValueError(f"Expected {num_jobs} due dates, got {len(due_dates)}")
 
     jobs = []
     for job_idx in range(num_jobs):
@@ -169,7 +169,7 @@ def read_fjsp_instance(file_path: str):
 def load_all_instances(instance_dir: str, pattern: str):
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
 
     instance_list = []
     max_jobs = 0
@@ -232,7 +232,7 @@ class JobShopInstance:
         self.total_ops_per_job = np.array([len(job_ops) for job_ops in jobs], dtype=np.int32)
 
 
-# 课程学习采样器
+# Curriculum learning sampler
 
 class CurriculumSampler:
     def __init__(self, instances: List[JobShopInstance], cfg: Config):
@@ -264,7 +264,7 @@ class CurriculumSampler:
         return random.choice(allowed_instances)
 
 
-# 状态归一化（支持在线更新）
+# State normalization (supports online update)
 
 class RunningMeanStd:
     __slots__ = ('mean', 'var', 'count')
@@ -297,7 +297,7 @@ class RunningMeanStd:
         return (x - self.mean) / (np.sqrt(self.var) + 1e-8)
 
 
-# 调度环境（稀疏奖励，多目标归一化）
+# Scheduling environment (sparse reward, multi-objective normalization)
 
 class MOFJSP_Env:
     __slots__ = ('cfg', 'inst', 'norm', 'action_dim',
@@ -416,10 +416,10 @@ class MOFJSP_Env:
             lb = np.sqrt(np.mean((self.machine_load[:inst.num_machines] - avg_load) ** 2))
             t_tardy = sum(max(0, self.job_avail_time[j] - inst.due_dates[j]) for j in range(inst.num_jobs))
 
-            # 归一化每个目标：除以实例的最大可能值（或固定值），使量纲一致
-            # 这里使用实例的 max_proc_time 和 max_due_date 作为基准
+            # Normalize each objective by the instance's maximum possible value (or a fixed value) to keep scales consistent
+            # Here we use max_proc_time and max_due_date as baselines
             norm_cmax = c_max / max(self.max_proc_time, 1.0)
-            norm_lb = lb / max(self.max_proc_time, 1.0)      # 负载平衡也可用 max_proc_time 归一化
+            norm_lb = lb / max(self.max_proc_time, 1.0)      # Load balance can also be normalized by max_proc_time
             norm_tardy = t_tardy / (self.max_due_date * inst.num_jobs + 1.0)
 
             final_penalty = w[0] * norm_cmax + w[1] * norm_lb + w[2] * norm_tardy
@@ -435,7 +435,7 @@ class MOFJSP_Env:
 
 
 
-# 神经网络
+# Neural networks
 
 def orthogonal_init(layer, gain=1.0):
     nn.init.orthogonal_(layer.weight, gain=gain)
@@ -491,7 +491,7 @@ class ValueNetwork(nn.Module):
 
 
 
-# PPO 训练器
+# PPO trainer
 
 class PPOKLTrainer:
     def __init__(self, policy: PolicyNetwork, value: ValueNetwork, cfg: Config):
@@ -562,16 +562,16 @@ class PPOKLTrainer:
                     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                     self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
                 except ValueError as e:
-                    print(f"优化器状态加载失败: {e}")
+                    print(f"Optimizer state load failed: {e}")
                 self.beta = checkpoint.get('beta', self.beta)
                 self.steps_done = checkpoint.get('steps_done', 0)
-                print(f"已加载模型: {self.model_path}, beta={self.beta:.4f}")
+                print(f"Loaded model: {self.model_path}, beta={self.beta:.4f}")
                 return True
             except RuntimeError as e:
-                print(f"模型结构不匹配，从头训练: {e}")
+                print(f"Model structure mismatch, starting from scratch: {e}")
                 return False
         else:
-            print("未找到模型，从头训练。")
+            print("Model not found, starting from scratch.")
             return False
 
     def compute_gae_gpu(self, rewards, values, dones):
@@ -637,7 +637,7 @@ class PPOKLTrainer:
         advantages = torch.cat(all_advantages, dim=0)
         returns = torch.cat(all_returns, dim=0)
 
-        # 打印原始优势统计
+        # Print original advantage statistics
         orig_adv_mean = advantages.mean().item()
         orig_adv_std = advantages.std().item()
         print(f"[Debug] Original advantages - mean: {orig_adv_mean:.6f}, std: {orig_adv_std:.6f}")
@@ -835,19 +835,19 @@ class PPOKLTrainer:
         }
 
 
-# 主训练函数
+# Main training function
 
 def train():
     cfg = Config()
     set_seed(42)
 
-    print(f"正在从目录 {cfg.instance_dir} 加载实例...")
+    print(f"Loading instances from directory {cfg.instance_dir}...")
     try:
         instance_tuples, max_jobs, max_machines, global_max_proc, global_max_due = \
             load_all_instances(cfg.instance_dir, cfg.file_pattern)
     except FileNotFoundError as e:
         print(e)
-        print("请检查实例路径和文件模式。")
+        print("Please check the instance path and file pattern.")
         return
 
     cfg.max_jobs = max_jobs
@@ -855,7 +855,7 @@ def train():
     cfg.global_max_proc_time = global_max_proc
     cfg.global_max_due_date = global_max_due
 
-    print(f"共加载 {len(instance_tuples)} 个实例，最大作业数 {max_jobs}，最大机器数 {max_machines}")
+    print(f"Loaded {len(instance_tuples)} instances, max_jobs={max_jobs}, max_machines={max_machines}")
 
     instance_list = []
     for jobs, mids, dues, fname, size in instance_tuples:
@@ -864,10 +864,10 @@ def train():
 
     if cfg.enable_curriculum:
         sampler = CurriculumSampler(instance_list, cfg)
-        print("课程学习已启用，将按阶段采样实例。")
+        print("Curriculum learning enabled, instances will be sampled by stage.")
     else:
         sampler = None
-        print("课程学习未启用，将随机均匀采样所有实例。")
+        print("Curriculum learning disabled, instances will be sampled uniformly.")
 
     state_dim = 2 * cfg.max_machines + 3 * cfg.max_jobs
     action_dim = cfg.max_jobs * cfg.max_machines
@@ -878,15 +878,15 @@ def train():
     try:
         policy = torch.jit.script(policy)
         value = torch.jit.script(value)
-        print("网络已使用 torch.jit.script 加速。")
+        print("Networks accelerated using torch.jit.script.")
     except Exception as e:
-        print(f"torch.jit.script 编译失败，使用普通模式：{e}")
+        print(f"torch.jit.script compilation failed, using normal mode: {e}")
 
     trainer = PPOKLTrainer(policy, value, cfg)
 
     state_norm = RunningMeanStd(shape=(state_dim,)) if cfg.use_state_norm else None
     if cfg.use_state_norm and state_norm is not None:
-        print(f"\n预收集 {cfg.precollect_episodes} 个episode用于归一化初始化...")
+        print(f"\nPre-collecting {cfg.precollect_episodes} episodes for normalization initialization...")
         for _ in range(cfg.precollect_episodes):
             inst = random.choice(instance_list)
             env = MOFJSP_Env(cfg, inst, norm=None)
@@ -904,18 +904,18 @@ def train():
                 state = next_state if next_state is not None else None
             if states_buffer:
                 state_norm.update(np.stack(states_buffer))
-        print("归一化初始化完成，后续将在每个step在线更新统计量。")
+        print("Normalization initialization completed, statistics will be updated online at each step.")
 
-    print(f"设备: {DEVICE}")
-    print(f"状态维度: {state_dim}, 动作维度: {action_dim}")
-    print(f"总训练 episode 数: {cfg.epochs}")
-    print(f"每 {cfg.episodes_per_update} 个 episode 训练一次")
-    print(f"批大小: {cfg.batch_size}, 隐藏层维度: {cfg.hidden_dim}, 层数: {cfg.num_hidden_layers}")
+    print(f"Device: {DEVICE}")
+    print(f"State dimension: {state_dim}, action dimension: {action_dim}")
+    print(f"Total training episodes: {cfg.epochs}")
+    print(f"Train every {cfg.episodes_per_update} episodes")
+    print(f"Batch size: {cfg.batch_size}, hidden dimension: {cfg.hidden_dim}, number of layers: {cfg.num_hidden_layers}")
 
     normalized_rewards = []
     kl_list = []
     total_loss_list = []
-    update_episodes = []          # 记录每次更新时的episode
+    update_episodes = []          # Record the episode number when each update happens
     best_norm_reward = -float('inf')
     reward_ema = None
     cmax_list, lb_list, tardy_list = deque(maxlen=100), deque(maxlen=100), deque(maxlen=100)
@@ -947,7 +947,7 @@ def train():
         while not done:
             mask = env.get_action_mask()
             if not mask.any():
-                print(f"警告：mask 全为 False，终止当前 episode")
+                print(f"Warning: mask is all False, terminating current episode")
                 done = True
                 break
 
@@ -982,7 +982,7 @@ def train():
                 final_info = info
 
         episodes_collected = ep
-        # 归一化奖励：总奖励除以总工序数（便于比较不同规模）
+        # Normalize reward: total reward divided by total number of operations (for comparability across different scales)
         norm_reward = ep_reward / inst.total_ops
         normalized_rewards.append(norm_reward)
         if final_info:
@@ -1015,13 +1015,13 @@ def train():
         if len(trajectory_buffer) >= cfg.episodes_per_update:
             try:
                 train_stats = trainer.train_step(trajectory_buffer)
-                # 记录更新时的 episode 和相关统计
+                # Record the episode number when this update occurs and the corresponding statistics
                 update_episodes.append(ep)
                 if train_stats:
                     kl_list.append(train_stats['kl'])
                     total_loss_list.append(train_stats['policy_loss'] + cfg.value_coef*train_stats['value_loss'] - trainer.entropy_coef*train_stats['entropy'])
             except Exception as e:
-                print(f"训练出错: {e}")
+                print(f"Training error: {e}")
                 traceback.print_exc()
                 train_stats = {}
             trajectory_buffer.clear()
@@ -1042,9 +1042,9 @@ def train():
                   f"Adv: {stats['advantage']:8.6f} | Val: {stats['value']:8.3f} | LR: {lr:.2e} | Steps/s: {steps_per_sec:.1f}{metrics}")
 
     trainer._save_model()
-    print(f"\n训练完成，模型已保存至 {trainer.model_path}")
+    print(f"\nTraining completed, model saved to {trainer.model_path}")
 
-    # 绘图
+    # Plotting
     plt.figure(figsize=(15, 5))
 
     def moving_average(data, window_size=20):
@@ -1053,7 +1053,7 @@ def train():
         cumsum = np.cumsum(np.insert(data, 0, 0))
         return (cumsum[window_size:] - cumsum[:-window_size]) / window_size
 
-    # 子图1：归一化奖励
+    # Subplot 1: Normalized reward
     plt.subplot(1, 3, 1)
     plt.plot(normalized_rewards, alpha=0.3, color='blue', label='Raw')
     if len(normalized_rewards) >= 20:
@@ -1070,13 +1070,12 @@ def train():
         plt.ylim(y_min - margin, y_max + margin)
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 
-    # 子图2：KL散度（使用 update_episodes 作为横坐标）
+    # Subplot 2: KL divergence (using update_episodes as x-axis)
     plt.subplot(1, 3, 2)
     if len(kl_list) > 0:
         plt.plot(update_episodes, kl_list, alpha=0.3, color='orange', label='Raw')
         if len(kl_list) >= 20:
             ma_kl = moving_average(kl_list, 20)
-            # 移动平均后长度减少，对应横坐标需截取
             plt.plot(update_episodes[19:], ma_kl, color='orange', linewidth=2, label='Moving Avg (20)')
     plt.title("KL Divergence Curve (per update)")
     plt.xlabel("Episode")
@@ -1089,7 +1088,7 @@ def train():
         plt.ylim(y_min - margin, y_max + margin)
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 
-    # 子图3：总损失（使用 update_episodes 作为横坐标）
+    # Subplot 3: Total loss (using update_episodes as x-axis)
     plt.subplot(1, 3, 3)
     if len(total_loss_list) > 0:
         plt.plot(update_episodes, total_loss_list, alpha=0.3, color='red', label='Raw')

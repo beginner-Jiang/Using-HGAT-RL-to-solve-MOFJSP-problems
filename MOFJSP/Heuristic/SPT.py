@@ -1,5 +1,5 @@
 """
-启发式规则实现：最短作业优先-SPT
+Heuristic rule implementation: Shortest Processing Time - SPT
 """
 import numpy as np
 from typing import List, Dict, Tuple, Any
@@ -8,86 +8,86 @@ import matplotlib
 import pandas as pd
 
 
-# 数据结构定义
+# Data structure definition
 
 class Operation:
-    """工序类"""
+    """Operation class"""
 
     def __init__(self, job_id: int, op_id: int, machine_times: Dict[int, float]):
         self.job_id = job_id
         self.op_id = op_id
-        self.machine_times = machine_times  # 机器ID -> 加工时间
+        self.machine_times = machine_times  # Machine ID -> Processing time
         self.assigned_machine = None
         self.start_time = 0
         self.end_time = 0
         self.is_scheduled = False
 
     def get_min_processing_time(self) -> float:
-        """返回最短加工时间"""
+        """Returns the minimum processing time"""
         return min(self.machine_times.values())
 
     def get_best_machine(self) -> int:
-        """返回加工时间最短的机器ID"""
+        """Returns the machine ID with the shortest processing time"""
         return min(self.machine_times.items(), key=lambda x: x[1])[0]
 
 
 class Job:
-    """作业类"""
+    """Job class"""
 
     def __init__(self, job_id: int, operations: List[Operation], due_date: float):
         self.job_id = job_id
         self.operations = operations
         self.due_date = due_date
-        self.current_op_index = 0  # 当前待调度的工序索引
+        self.current_op_index = 0  # Index of the current operation to be scheduled
 
     def get_current_operation(self) -> Operation:
-        """返回当前待调度的工序"""
+        """Returns the current operation to be scheduled"""
         if self.current_op_index < len(self.operations):
             return self.operations[self.current_op_index]
         return None
 
     def complete_current_operation(self):
-        """标记当前工序完成，准备下一个工序"""
+        """Marks the current operation as completed and prepares for the next one"""
         if self.current_op_index < len(self.operations):
             self.current_op_index += 1
 
     def is_completed(self) -> bool:
-        """检查作业是否全部完成"""
+        """Checks if the job is fully completed"""
         return self.current_op_index >= len(self.operations)
 
     def get_completion_time(self) -> float:
-        """返回作业完成时间（最后一道工序的完成时间）"""
+        """Returns the job completion time (end time of the last operation)"""
         if len(self.operations) == 0:
             return 0
         return self.operations[-1].end_time
 
 
 class Machine:
-    """机器类"""
+    """Machine class"""
 
     def __init__(self, machine_id: int):
         self.machine_id = machine_id
-        self.schedule = []  # 已安排的工序列表 [(start_time, end_time, operation)]
-        self.available_time = 0  # 机器最早可用时间
+        self.schedule = []  # List of scheduled operations [(start_time, end_time, operation)]
+        self.available_time = 0  # Earliest available time of the machine
 
     def assign_operation(self, operation: Operation, start_time: float) -> float:
-        """将工序分配到机器上，返回完成时间"""
-        # 找到最短加工时间的机器
+        """Assigns an operation to the machine, returns the completion time"""
+        # Find the machine with the shortest processing time
         best_machine_id = operation.get_best_machine()
         if best_machine_id != self.machine_id:
-            # 如果这台机器不是最优选择，返回一个很大的数表示不适合
+            # If this machine is not the optimal choice, return a large number indicating unsuitable
             return float('inf')
 
         processing_time = operation.machine_times[self.machine_id]
-        # 确保开始时间不早于机器可用时间
+        # Ensure start time is not earlier than machine available time
         actual_start = max(start_time, self.available_time)
         end_time = actual_start + processing_time
 
-        # 更新机器状态
+        # Update machine status
         self.schedule.append((actual_start, end_time, operation))
         self.available_time = end_time
 
-        # 更新工序状态
+        # Update operation status
         operation.assigned_machine = self.machine_id
         operation.start_time = actual_start
         operation.end_time = end_time
@@ -96,14 +96,14 @@ class Machine:
         return end_time
 
     def get_total_load(self) -> float:
-        """返回机器总负载（加工时间总和）"""
+        """Returns the total load of the machine (sum of processing times)"""
         return sum(end - start for start, end, _ in self.schedule)
 
 
-# SPT调度算法实现
+# SPT scheduling algorithm implementation
 
 class SPTScheduler:
-    """基于SPT（最短加工时间）规则的调度器"""
+    """Scheduler based on SPT (Shortest Processing Time) rule"""
 
     def __init__(self, jobs: List[Job], machines: List[Machine]):
         self.jobs = jobs
@@ -113,7 +113,7 @@ class SPTScheduler:
         self.total_operations = sum(len(job.operations) for job in jobs)
 
     def get_available_operations(self) -> List[Operation]:
-        """获取所有可调度的工序（作业的第一个未调度工序）"""
+        """Gets all schedulable operations (first unscheduled operation of each job)"""
         available_ops = []
         for job in self.jobs:
             if not job.is_completed():
@@ -123,57 +123,57 @@ class SPTScheduler:
         return available_ops
 
     def schedule_step(self) -> bool:
-        """执行一步调度，返回是否还有工序需要调度"""
+        """Executes one scheduling step, returns whether there are still operations to be scheduled"""
         available_ops = self.get_available_operations()
 
         if not available_ops:
             return False
 
-        # 1. SPT规则：选择最短加工时间的工序
+        # 1. SPT rule: Select the operation with the shortest processing time
         selected_op = min(available_ops, key=lambda op: op.get_min_processing_time())
 
-        # 2. 为工序选择机器（选择加工时间最短的机器）
+        # 2. Select the machine for the operation (choose the machine with the shortest processing time)
         best_machine_id = selected_op.get_best_machine()
         best_machine = self.machines[best_machine_id]
 
-        # 3. 计算开始时间
+        # 3. Calculate start time
         job = self.jobs[selected_op.job_id]
         job_ready_time = 0
         if selected_op.op_id > 0:
             prev_op = job.operations[selected_op.op_id - 1]
             job_ready_time = prev_op.end_time
 
-        # 4. 分配工序到机器
+        # 4. Assign operation to machine
         completion_time = best_machine.assign_operation(selected_op, job_ready_time)
 
-        # 5. 更新作业状态
+        # 5. Update job status
         if completion_time != float('inf'):
             job.complete_current_operation()
             self.completed_operations += 1
 
-        # 6. 更新当前时间
+        # 6. Update current time
         machine_times = [machine.available_time for machine in self.machines]
         self.current_time = min(machine_times) if machine_times else self.current_time
 
         return True
 
     def run_schedule(self):
-        """运行完整调度"""
+        """Runs the complete schedule"""
         while self.schedule_step():
             pass
 
     def calculate_metrics(self) -> Dict[str, float]:
-        """计算调度性能指标"""
-        # 1. 最大完工时间
+        """Calculates scheduling performance metrics"""
+        # 1. Makespan
         completion_times = [job.get_completion_time() for job in self.jobs]
         makespan = max(completion_times)
 
-        # 2. 机器负载均衡度（标准差）
+        # 2. Machine load balance (Standard Deviation)
         machine_loads = [machine.get_total_load() for machine in self.machines]
         avg_load = np.mean(machine_loads)
         load_balance = np.sqrt(np.mean([(load - avg_load) ** 2 for load in machine_loads]))
 
-        # 3. 总拖期时间 & 拖期作业信息
+        # 3. Total tardiness & tardy job information
         total_tardiness = 0
         tardy_jobs = []
         for job in self.jobs:
@@ -196,88 +196,88 @@ class SPTScheduler:
         }
 
     def print_schedule(self):
-        """打印调度结果"""
+        """Prints the schedule result"""
         print("=" * 80)
-        print("SPT调度结果（最短加工时间优先）")
+        print("SPT Schedule Result (Shortest Processing Time First)")
         print("=" * 80)
 
-        # 按机器打印
+        # Print by machine
         for machine in self.machines:
-            print(f"\n机器 {machine.machine_id} (总负载: {machine.get_total_load():.1f}):")
+            print(f"\nMachine {machine.machine_id} (Total Load: {machine.get_total_load():.1f}):")
             machine.schedule.sort(key=lambda x: x[0])
             for start, end, op in machine.schedule:
                 job_due_date = self.jobs[op.job_id].due_date
-                print(f"  作业{op.job_id}-工序{op.op_id}: [{start:.1f} - {end:.1f}], 作业交货期: {job_due_date}")
+                print(f"  Job{op.job_id}-Operation{op.op_id}: [{start:.1f} - {end:.1f}], Job Due Date: {job_due_date}")
 
-        # 打印性能指标
+        # Print performance metrics
         metrics = self.calculate_metrics()
         print(f"\n{'=' * 80}")
-        print("性能指标:")
-        print(f"  最大完工时间 (Makespan): {metrics['makespan']:.2f}")
-        print(f"  机器负载均衡度: {metrics['load_balance']:.4f}")
-        print(f"  总拖期时间: {metrics['total_tardiness']:.2f}")
-        print(f"  平均拖期时间: {metrics['avg_tardiness']:.2f}")
-        print(f"  拖期作业比例: {metrics['tardy_ratio']:.2%}")
+        print("Performance Metrics:")
+        print(f"  Makespan: {metrics['makespan']:.2f}")
+        print(f"  Machine Load Balance: {metrics['load_balance']:.4f}")
+        print(f"  Total Tardiness: {metrics['total_tardiness']:.2f}")
+        print(f"  Average Tardiness: {metrics['avg_tardiness']:.2f}")
+        print(f"  Tardy Job Ratio: {metrics['tardy_ratio']:.2%}")
 
-        # 打印拖期作业详情
+        # Print tardy job details
         if metrics['tardy_jobs']:
             print(f"\n{'=' * 80}")
-            print("拖期作业详情:")
+            print("Tardy Job Details:")
             for job_id, completion_time, due_date, tardiness in metrics['tardy_jobs']:
-                print(f"  作业{job_id}: 完成时间={completion_time:.1f}, 交货期={due_date}, 拖期时间={tardiness:.1f}")
+                print(f"  Job{job_id}: Completion Time={completion_time:.1f}, Due Date={due_date}, Tardiness={tardiness:.1f}")
 
-        # 打印作业完成情况
+        # Print job completion status
         print(f"\n{'=' * 80}")
-        print("作业完成情况:")
+        print("Job Completion Status:")
         for job in self.jobs:
             completion_time = job.get_completion_time()
             tardiness = max(0, completion_time - job.due_date)
-            status = "拖期" if tardiness > 0 else "准时"
-            print(f"  作业{job.job_id}: 交货期={job.due_date}, 完成时间={completion_time:.1f}, "
-                  f"拖期时间={tardiness:.1f}, 状态={status}")
+            status = "Tardy" if tardiness > 0 else "On Time"
+            print(f"  Job{job.job_id}: Due Date={job.due_date}, Completion Time={completion_time:.1f}, "
+                  f"Tardiness={tardiness:.1f}, Status={status}")
 
         return metrics
 
 
-# 文件读取模块
+# File reading module
 
 def read_fjsp_instance(file_path: str) -> Tuple[List[Job], List[Machine]]:
     """
-    读取标准 MOFJSP 数据文件（扩展 Brandimarte 格式）
-    文件格式：
-        第一行: 作业数  机器数
-        接下来 N 行: 每个作业的工序信息
-            - 第一个整数: 该作业的工序数量 O
-            - 后续 O 组: 每组以 k 开头，后跟 k 对 (机器ID, 加工时间)
-        然后一行: N 个整数，每个作业的交货期
-        可能还有额外行（如柔性矩阵等），忽略
-    返回: (jobs列表, machines列表)
+    Reads a standard MOFJSP data file (extended Brandimarte format)
+    File format:
+        First line: Number of jobs   Number of machines
+        Next N lines: Process information for each job
+            - First integer: Number of operations O for this job
+            - Following O groups: Each group starts with k, followed by k pairs (MachineID, Processing Time)
+        Then one line: N integers, due date for each job
+        There may be additional lines (e.g., flexibility matrix), ignore them.
+    Returns: (list of jobs, list of machines)
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            # 过滤空行和注释行
+            # Filter empty lines and comment lines
             lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
-        print(f"错误：文件 {file_path} 未找到！")
+        print(f"Error: File {file_path} not found!")
         exit(1)
 
     if len(lines) < 2:
-        raise ValueError("文件格式错误：行数不足")
+        raise ValueError("File format error: insufficient lines")
 
-    # 第一行：作业数 机器数
+    # First line: Number of jobs, Number of machines
     num_jobs, num_machines = map(int, lines[0].split())
     machines = [Machine(i) for i in range(num_machines)]
 
-    # 接下来的 num_jobs 行是作业工序数据
+    # The next num_jobs lines are job operation data
     job_lines = lines[1:1 + num_jobs]
     if len(job_lines) != num_jobs:
-        raise ValueError(f"文件格式错误：期望 {num_jobs} 个作业行，实际得到 {len(job_lines)} 行")
+        raise ValueError(f"File format error: expected {num_jobs} job lines, got {len(job_lines)} lines")
 
-    # 再下一行是交货期（必须存在）
+    # The next line is due dates (must exist)
     due_date_line = lines[1 + num_jobs]
     due_dates = list(map(float, due_date_line.split()))
     if len(due_dates) != num_jobs:
-        raise ValueError(f"文件格式错误：期望 {num_jobs} 个交货期，实际得到 {len(due_dates)} 个")
+        raise ValueError(f"File format error: expected {num_jobs} due dates, got {len(due_dates)}")
 
     jobs = []
     for job_idx in range(num_jobs):
@@ -289,14 +289,14 @@ def read_fjsp_instance(file_path: str) -> Tuple[List[Job], List[Machine]]:
         operations = []
         for op_idx in range(num_ops):
             if idx >= len(nums):
-                raise ValueError(f"作业 {job_idx} 的数据不完整")
+                raise ValueError(f"Job {job_idx} data incomplete")
             k = nums[idx]
             idx += 1
             machine_times = {}
             for _ in range(k):
                 if idx + 1 >= len(nums):
-                    raise ValueError(f"作业 {job_idx} 工序 {op_idx} 的机器数据不足")
-                machine_id = nums[idx] - 1  # 转换为0索引
+                    raise ValueError(f"Insufficient machine data for Job {job_idx} operation {op_idx}")
+                machine_id = nums[idx] - 1  # Convert to 0-index
                 processing_time = float(nums[idx + 1])
                 if 0 <= machine_id < num_machines:
                     machine_times[machine_id] = processing_time
@@ -310,26 +310,26 @@ def read_fjsp_instance(file_path: str) -> Tuple[List[Job], List[Machine]]:
     return jobs, machines
 
 
-# 可视化函数
+# Visualization function
 
 def visualize_gantt_chart(jobs: List[Job], machines: List[Machine],
                           title="SPT Rule - Gantt Chart", save_path=None):
-    """甘特图绘制并保存"""
+    """Draws and saves the Gantt chart"""
     fig, ax = plt.subplots(figsize=(14, 8))
 
     colors = ['#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', '#EF476F', '#073B4C', '#118AB2']
     job_colors = {job.job_id: colors[i % len(colors)] for i, job in enumerate(jobs)}
 
-    # 为每一台机器分配调度
+    # Draw schedule for each machine
     for machine in machines:
         y_pos = machine.machine_id
         for start, end, op in machine.schedule:
             color = job_colors[op.job_id]
             ax.barh(y_pos, end - start, left=start, height=0.6,
                     color=color, edgecolor='black')
-            # 工序标签移动
+            # Operation label moved
 
-    # 增加拖延时间线
+    # Add due date lines
     for job in jobs:
         due_date = job.due_date
         ax.axvline(x=due_date, color=job_colors[job.job_id], linestyle='--', alpha=0.7, linewidth=1.5)
@@ -356,53 +356,53 @@ def visualize_gantt_chart(jobs: List[Job], machines: List[Machine],
     plt.show()
 
 
-# ==================== 5. 主函数 ====================
+# Main function
 
 def main():
-    """主函数：读取文件，执行SPT调度，展示并保存甘特图，导出指标到Excel"""
+    """Main function: reads file, executes SPT scheduling, displays and saves Gantt chart, exports metrics to Excel"""
     print("=" * 80)
-    print("基于SPT（最短加工时间）规则的柔性作业车间调度（文件驱动）")
+    print("Flexible Job Shop Scheduling based on SPT (Shortest Processing Time) Rule (File-driven)")
     print("=" * 80)
 
-    # 指定数据文件路径
+    # Specify the data file path
     file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"
 
-    # 1. 从文件读取调度实例
+    # 1. Read the scheduling instance from the file
     try:
         jobs, machines = read_fjsp_instance(file_path)
     except Exception as e:
-        print(f"读取文件失败: {e}")
+        print(f"Failed to read file: {e}")
         return
 
-    print("\n问题描述:")
-    print(f"  作业数量: {len(jobs)}")
-    print(f"  机器数量: {len(machines)}")
+    print("\nProblem Description:")
+    print(f"  Number of Jobs: {len(jobs)}")
+    print(f"  Number of Machines: {len(machines)}")
     total_ops = sum(len(job.operations) for job in jobs)
-    print(f"  总工序数量: {total_ops}")
+    print(f"  Total Number of Operations: {total_ops}")
 
-    print("\n作业交货期:")
+    print("\nJob Due Dates:")
     for job in jobs:
         min_total_time = sum(min(op.machine_times.values()) for op in job.operations)
-        print(f"  作业{job.job_id}: 最短完成时间={min_total_time:.1f}, 交货期={job.due_date:.1f}, "
-              f"松弛时间={job.due_date - min_total_time:.1f}")
+        print(f"  Job{job.job_id}: Minimum Completion Time={min_total_time:.1f}, Due Date={job.due_date:.1f}, "
+              f"Slack Time={job.due_date - min_total_time:.1f}")
 
-    # 2. 执行SPT调度
+    # 2. Execute SPT scheduling
     scheduler = SPTScheduler(jobs, machines)
     scheduler.run_schedule()
 
-    # 3. 打印调度结果并获取指标
+    # 3. Print scheduling results and obtain metrics
     spt_metrics = scheduler.print_schedule()
 
-    # 4. 绘制并保存甘特图
-    print("\n正在生成甘特图...")
+    # 4. Draw and save Gantt chart
+    print("\nGenerating Gantt Chart...")
     visualize_gantt_chart(jobs, machines, save_path="../Figure_And_File/Heuristic/SPT/gantt_chart_spt.png")
 
-    # 5. 将性能指标导出为Excel文件
+    # 5. Export performance metrics to an Excel file
     try:
-        # 创建汇总指标DataFrame
+        # Create summary metrics DataFrame
         summary_data = {
-            '指标': ['最大完工时间 (Makespan)', '机器负载均衡度', '总拖期时间', '平均拖期时间', '拖期作业比例'],
-            '数值': [
+            'Metric': ['Makespan', 'Machine Load Balance', 'Total Tardiness', 'Average Tardiness', 'Tardy Job Ratio'],
+            'Value': [
                 spt_metrics['makespan'],
                 spt_metrics['load_balance'],
                 spt_metrics['total_tardiness'],
@@ -412,35 +412,35 @@ def main():
         }
         df_summary = pd.DataFrame(summary_data)
 
-        # 创建拖期作业详情DataFrame（如果有）
+        # Create tardy job details DataFrame (if any)
         tardy_jobs_list = []
         for job_id, comp_time, due, tard in spt_metrics['tardy_jobs']:
             tardy_jobs_list.append({
-                '作业ID': job_id,
-                '完成时间': comp_time,
-                '交货期': due,
-                '拖期时间': tard
+                'Job ID': job_id,
+                'Completion Time': comp_time,
+                'Due Date': due,
+                'Tardiness': tard
             })
-        df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'提示': ['无拖期作业']})
+        df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'Note': ['No tardy jobs']})
 
-        # 写入Excel文件，包含两个sheet
+        # Write to Excel file, containing two sheets
         excel_file = '../Figure_And_File/Heuristic/SPT/SPT_metrics.xlsx'
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
             df_summary.to_excel(writer, sheet_name='Summary', index=False)
             df_tardy.to_excel(writer, sheet_name='TardyJobs', index=False)
 
-        print(f"\n性能指标已成功导出到 {excel_file}")
+        print(f"\nPerformance metrics have been successfully exported to {excel_file}")
     except ImportError:
-        print("\n警告：未安装 pandas 或 openpyxl，无法导出Excel。请安装：pip install pandas openpyxl")
+        print("\nWarning: pandas or openpyxl not installed, cannot export to Excel. Please install: pip install pandas openpyxl")
     except Exception as e:
-        print(f"\n导出Excel时出错：{e}")
+        print(f"\nError exporting to Excel: {e}")
 
-    # 6. 验证调度可行性
+    # 6. Verify schedule feasibility
     print("\n" + "=" * 80)
-    print("调度可行性验证:")
+    print("Schedule Feasibility Verification:")
     print("-" * 80)
 
-    # 检查所有工序是否都被调度
+    # Check if all operations are scheduled
     unscheduled_ops = []
     for job in jobs:
         for op in job.operations:
@@ -448,13 +448,13 @@ def main():
                 unscheduled_ops.append((job.job_id, op.op_id))
 
     if unscheduled_ops:
-        print(f"  警告: {len(unscheduled_ops)} 个工序未被调度")
+        print(f"  Warning: {len(unscheduled_ops)} operations are not scheduled")
         for job_id, op_id in unscheduled_ops:
-            print(f"    作业{job_id}-工序{op_id}")
+            print(f"    Job{job_id}-Operation{op_id}")
     else:
-        print("  所有工序都已成功调度")
+        print("  All operations have been successfully scheduled")
 
-    # 检查机器冲突
+    # Check for machine conflicts
     conflicts = []
     for machine in machines:
         schedule = sorted(machine.schedule, key=lambda x: x[0])
@@ -465,11 +465,11 @@ def main():
                 conflicts.append((machine.machine_id, i - 1, i))
 
     if conflicts:
-        print(f"  警告: 发现 {len(conflicts)} 处机器时间冲突")
+        print(f"  Warning: Found {len(conflicts)} machine time conflicts")
     else:
-        print("  无机器时间冲突")
+        print("  No machine time conflicts")
 
-    print("\nSPT调度完成!")
+    print("\nSPT scheduling completed!")
 
 if __name__ == "__main__":
     main()

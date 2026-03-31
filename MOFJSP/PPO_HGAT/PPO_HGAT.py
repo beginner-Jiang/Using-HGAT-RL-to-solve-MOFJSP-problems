@@ -1,7 +1,7 @@
 """
-PPO_HGAT 训练程序
-完全实现PPO(使用KL散度,结合层次强化学习)+HGAT(异质析取图)
-训练完毕后绘制三个目标值（Cmax, Load Balance, Tardy）的归一化曲线、KL散度及总损失的变化趋势曲线
+PPO_HGAT Training Program
+Fully implements PPO (using KL divergence, combined with hierarchical reinforcement learning) + HGAT (heterogeneous graph)
+After training, plots the normalized curves of three objectives (Cmax, Load Balance, Tardy), KL divergence, and total loss variation trends
 """
 
 import torch
@@ -20,17 +20,17 @@ from collections import deque
 import matplotlib.pyplot as plt
 import re
 
-# 1. 全局配置
+# 1. Global Configuration
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-6
 
-# 多目标权重
+# Multi-objective weights
 W1 = 0.4  # Cmax
 W2 = 0.3  # Load Balance
 W3 = 0.3  # Tardy
 
-# 随机种子
+# Random seed
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -38,7 +38,7 @@ torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
-# 实例目录配置
+# Instance directory configuration
 INSTANCE_DIR = "../mo_fjsp_instances"
 FILE_PATTERN = "mo_fjsp_*_train.txt"
 MODEL_DIR = "../model/ppo_hgat"
@@ -46,7 +46,7 @@ MODEL_NAME = "ppo_hgat_best.pth"
 
 torch.backends.cudnn.benchmark = True
 
-# 2. 配置类
+# 2. Configuration class
 
 class Config:
     n_episodes = 10000
@@ -78,9 +78,9 @@ class Config:
     max_edges_per_type = 30000
     num_envs = 10
     amp_enabled = False
-    logits_clip = 50.0  # 新增：logits 裁剪范围
+    logits_clip = 50.0
 
-    # 课程学习参数
+    # Curriculum learning parameters
     curriculum_enabled = True
     curriculum_stages = [
         (0.0, 0.3, ['small']),
@@ -91,7 +91,7 @@ class Config:
 cfg = Config()
 
 
-# 3. 数据读取与实例定义
+# 3. Data reading and instance definition
 
 @dataclass
 class Operation:
@@ -112,7 +112,7 @@ def read_fjsp_instance(file_path: str):
         sys.exit(1)
 
     if len(lines) < 3:
-        raise ValueError(f"实例文件 {file_path} 数据行不足")
+        raise ValueError(f"Instance file {file_path} has insufficient data lines")
 
     num_jobs, num_machines = map(int, lines[0].split())
     job_lines = lines[1:1 + num_jobs]
@@ -122,9 +122,9 @@ def read_fjsp_instance(file_path: str):
     machine_capabilities = list(map(int, capabilities_line.split()))
 
     if len(due_dates) != num_jobs:
-        print(f"警告：交货期数量 ({len(due_dates)}) 与作业数 ({num_jobs}) 不匹配")
+        print(f"Warning: number of due dates ({len(due_dates)}) does not match number of jobs ({num_jobs})")
     if len(machine_capabilities) != num_machines:
-        print(f"警告：机器能力数量 ({len(machine_capabilities)}) 与机器数 ({num_machines}) 不匹配")
+        print(f"Warning: number of machine capabilities ({len(machine_capabilities)}) does not match number of machines ({num_machines})")
 
     jobs = []
     for job_idx, line in enumerate(job_lines):
@@ -151,7 +151,7 @@ def read_fjsp_instance(file_path: str):
 def load_all_instances(instance_dir: str, pattern: str):
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
 
     instance_list = []
     max_jobs = 0
@@ -254,7 +254,7 @@ class MOFJSPInstance:
         else:
             self.capability_tensor = self.capability_tensor * 0.0
 
-        # 预计算边
+        # Precompute edges
         seq_src = []
         seq_dst = []
         for job in range(self.n_jobs):
@@ -293,7 +293,7 @@ class MOFJSPInstance:
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
 
-# 4. 课程学习采样器
+# 4. Curriculum learning sampler
 
 class CurriculumSampler:
     def __init__(self, instances: List[MOFJSPInstance], cfg: Config):
@@ -324,7 +324,7 @@ class CurriculumSampler:
         return random.choice(allowed_instances)
 
 
-# 5. 状态归一化工具
+# 5. State normalization utility
 
 class TorchRunningMeanStd:
     def __init__(self, shape=(), epsilon=1e-4, device=DEVICE):
@@ -357,7 +357,7 @@ class TorchRunningMeanStd:
         return (x - self.mean) / (self.var.sqrt() + 1e-8)
 
 
-# 6. 异质图环境
+# 6. Heterogeneous graph environment
 
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
@@ -448,7 +448,7 @@ class HeteroGraphEnv:
         self.op_finish_time[op_idx] = end
         self.op_scheduled[op_idx] = True
 
-        # 即时奖励
+        # Immediate reward
         old_LB = torch.std(self.machine_load)
         temp_load = self.machine_load.clone()
         temp_load[machine.long()] += p_time
@@ -470,7 +470,7 @@ class HeteroGraphEnv:
 
         done = self.op_scheduled.all().item()
         if done:
-            # 最终全局惩罚
+            # Final global penalty
             c_max = self.current_time
             avg_load = torch.mean(self.machine_load)
             lb = torch.sqrt(torch.mean((self.machine_load - avg_load) ** 2))
@@ -543,7 +543,7 @@ class HeteroGraphEnv:
         }
 
 
-# 7. 批处理环境管理器
+# 7. Batch environment manager
 
 class BatchEnv:
     def __init__(self, envs: List['HeteroGraphEnv']):
@@ -565,7 +565,7 @@ class BatchEnv:
         return next_states, rewards, dones
 
 
-# 8. 异质图神经网络
+# 8. Heterogeneous graph neural network
 
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
@@ -665,7 +665,7 @@ class HeteroGAT(nn.Module):
         return h_op2, h_mac2
 
 
-# 9. 分层策略网络（改进数值稳定）
+# 9. Hierarchical policy networks (improved numerical stability)
 
 class UpperPolicy(nn.Module):
     def __init__(self, emb_dim, hidden_dim):
@@ -685,12 +685,12 @@ class UpperPolicy(nn.Module):
             cat = torch.cat([g_rep, op_embs], dim=1)
             logits = self.net(cat).squeeze(-1)
             if mask is not None:
-                # 使用 -1e9 代替 -inf，避免 softmax 产生 NaN
+                # Use -1e9 instead of -inf to avoid NaN in softmax
                 fill_value = -1e9
                 logits = logits.masked_fill(mask == 0, fill_value)
-            # 裁剪 logits 防止溢出
+            # Clip logits to prevent overflow
             logits = torch.clamp(logits, min=-cfg.logits_clip, max=cfg.logits_clip)
-            # 如果整行都是 fill_value，则返回均匀分布
+            # If entire row is fill_value, return uniform distribution
             if (logits == fill_value).all():
                 probs = torch.ones(N, device=logits.device) / N
             else:
@@ -781,7 +781,7 @@ class Critic(nn.Module):
         return self.net(g_emb)
 
 
-# 10. 批处理状态打包
+# 10. Batch state packing
 
 def batch_states(states: List[Dict], n_op: int, n_mac: int):
     batch_size = len(states)
@@ -927,7 +927,7 @@ class HierarchicalPPOAgent:
             'entropy_coef': self.entropy_coef,
             'episode_counter': self.episode_counter
         }, path)
-        print(f"模型已保存至 {path}")
+        print(f"Model saved to {path}")
 
     def load(self, path):
         if os.path.exists(path):
@@ -955,10 +955,10 @@ class HierarchicalPPOAgent:
             self.entropy_coef = checkpoint.get('entropy_coef', self.entropy_coef)
             self.episode_counter = checkpoint.get('episode_counter', 0)
 
-            print(f"模型已从 {path} 加载并转换为 float32，beta={self.beta:.4f}, entropy_coef={self.entropy_coef:.4f}")
+            print(f"Model loaded from {path} and converted to float32, beta={self.beta:.4f}, entropy_coef={self.entropy_coef:.4f}")
             return True
         else:
-            print(f"未找到模型文件 {path}，从头开始训练。")
+            print(f"Model file {path} not found, starting training from scratch.")
             return False
 
     def get_action_batch(self, states: List[Dict], insts: List[MOFJSPInstance], deterministic=False):
@@ -966,7 +966,7 @@ class HierarchicalPPOAgent:
         n_op_global = states[0]['op_feats'].shape[0]
         n_mac_global = states[0]['mac_feats'].shape[0]
 
-        # 提前检测 op_mask 全零的状态（已完成环境）
+        # Early detection of states with all-zero op_mask (finished environments)
         invalid_indices = []
         for i, s in enumerate(states):
             if s['op_mask'].sum().item() == 0:
@@ -977,11 +977,11 @@ class HierarchicalPPOAgent:
             probs_list = [None] * batch_size
             indices_list = [None] * batch_size
             for i in invalid_indices:
-                # 分配默认动作 (0,0,0) 并跳过网络计算
+                # Assign default action (0,0,0) and skip network computation
                 actions[i] = (0, 0, 0)
                 probs_list[i] = (1.0, 1.0)
                 indices_list[i] = (0, 0)
-                print(f"警告：状态 {i} 的 op_mask 全零，分配默认动作 (0,0,0)")
+                print(f"Warning: State {i} has all-zero op_mask, assigning default action (0,0,0)")
             valid_indices = [i for i in range(batch_size) if i not in invalid_indices]
             if valid_indices:
                 valid_states = [states[i] for i in valid_indices]
@@ -993,7 +993,7 @@ class HierarchicalPPOAgent:
                     indices_list[idx] = il
             return actions, probs_list, indices_list
 
-        # 正常流程
+        # Normal flow
         batch_state_dict, state_slices, batch_op_mask = batch_states(states, n_op_global, n_mac_global)
 
         with torch.no_grad():
@@ -1023,12 +1023,12 @@ class HierarchicalPPOAgent:
 
             u_probs_batch = self.upper(g_embs, batch_h_op, batch_op_masks)
 
-            # 确保每行概率有效
+            # Ensure each row of probabilities is valid
             for i in range(batch_size):
                 if torch.isnan(u_probs_batch[i]).any() or u_probs_batch[i].sum().item() < EPS:
-                    print(f"严重错误：Upper 概率分布第 {i} 行无效，请检查网络输出")
-                    print(f"概率分布: {u_probs_batch[i]}")
-                    raise RuntimeError("概率分布无效，训练中止")
+                    print(f"Critical error: Upper probability distribution row {i} is invalid, please check network output")
+                    print(f"Probability distribution: {u_probs_batch[i]}")
+                    raise RuntimeError("Invalid probability distribution, training halted")
 
             if deterministic:
                 op_indices = torch.argmax(u_probs_batch, dim=1)
@@ -1049,9 +1049,9 @@ class HierarchicalPPOAgent:
 
             for i in range(batch_size):
                 if torch.isnan(l_probs_batch[i]).any() or l_probs_batch[i].sum().item() < EPS:
-                    print(f"严重错误：Lower 概率分布第 {i} 行无效，请检查网络输出")
-                    print(f"概率分布: {l_probs_batch[i]}")
-                    raise RuntimeError("概率分布无效，训练中止")
+                    print(f"Critical error: Lower probability distribution row {i} is invalid, please check network output")
+                    print(f"Probability distribution: {l_probs_batch[i]}")
+                    raise RuntimeError("Invalid probability distribution, training halted")
 
             if deterministic:
                 mac_indices = torch.argmax(l_probs_batch, dim=1)
@@ -1089,7 +1089,7 @@ class HierarchicalPPOAgent:
 
         chunk_size = 256
 
-        # 优势计算
+        # Advantage calculation
         with torch.no_grad():
             batch_state_dict, state_slices, _ = batch_states(states, n_op_global, n_mac_global)
             h_op_all, h_mac_all = self.gat(batch_state_dict)
@@ -1114,7 +1114,7 @@ class HierarchicalPPOAgent:
             advantages = rev_advantages.flip(0)
             returns = values + advantages
 
-            # 优势归一化
+            # Advantage normalization
             adv_std = advantages.std()
             if adv_std < 1e-8:
                 advantages = advantages - advantages.mean()
@@ -1207,7 +1207,7 @@ class HierarchicalPPOAgent:
             surr2_l = torch.clamp(ratio_l, 1 - self.clip, 1 + self.clip) * chunk_advantages
             policy_loss_l = -torch.min(surr1_l, surr2_l).mean()
 
-            # 标准KL散度 KL(old||new)，确保数值稳定
+            # Standard KL divergence KL(old||new), ensuring numerical stability
             kl_u = (chunk_old_u_probs_clamped * (torch.log(chunk_old_u_probs_clamped + EPS) - torch.log(curr_u_probs + EPS))).mean()
             kl_l = (chunk_old_l_probs_clamped * (torch.log(chunk_old_l_probs_clamped + EPS) - torch.log(curr_l_probs + EPS))).mean()
             kl = kl_u + kl_l
@@ -1238,7 +1238,7 @@ class HierarchicalPPOAgent:
             total_loss = policy_loss_u + policy_loss_l + self.value_coef * value_loss + self.beta * kl - self.entropy_coef * entropy
 
             if torch.isnan(total_loss) or torch.isinf(total_loss):
-                print(f"警告：损失为 NaN/Inf 在块 {chunk_start}-{chunk_end}，跳过此块。")
+                print(f"Warning: Loss is NaN/Inf in chunk {chunk_start}-{chunk_end}, skipping this chunk.")
                 del h_op_all, h_mac_all, g_embs_chunk, batch_h_op, batch_h_mac, batch_op_masks
                 del curr_u_probs_batch, curr_l_probs_batch, selected_op_embs
                 del ratio_u, ratio_l, surr1_u, surr2_u, surr1_l, surr2_l
@@ -1250,7 +1250,7 @@ class HierarchicalPPOAgent:
             total_loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(self.params, self.max_grad_norm)
             if torch.isnan(grad_norm) or torch.isinf(grad_norm):
-                print(f"警告：梯度范数为 NaN/Inf，跳过此块更新。")
+                print(f"Warning: Gradient norm is NaN/Inf, skipping this chunk update.")
                 self.opt.zero_grad()
             else:
                 self.opt.step()
@@ -1273,7 +1273,7 @@ class HierarchicalPPOAgent:
                 torch.cuda.empty_cache()
 
         if valid_chunks == 0:
-            print("警告：所有更新块均被跳过，无有效更新。")
+            print("Warning: All update chunks were skipped, no valid update performed.")
             return None
 
         avg_kl = total_kl / T
@@ -1313,10 +1313,10 @@ class HierarchicalPPOAgent:
         return stats
 
 
-# 12. 绘图辅助函数（新增）
+# 12. Plotting helper functions (new)
 
 def plot_three_goals(cmax_list, lb_list, tardy_list, save_path):
-    """绘制三个目标值随 episode 变化的子图（原始值）"""
+    """Plot the three objective values across episodes (original values)"""
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     colors = ['blue', 'green', 'red']
     titles = ['Cmax (Max Completion Time)', 'Load Balance (Std)', 'Total Tardiness']
@@ -1339,11 +1339,11 @@ def plot_three_goals(cmax_list, lb_list, tardy_list, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.show()
-    print(f"三个目标曲线（原始值）已保存至 {save_path}")
+    print(f"Three objective curves (original values) saved to {save_path}")
 
 def plot_three_goals_normalized(cmax_list, lb_list, tardy_list, save_path):
-    """绘制三个目标值随 episode 变化的子图（归一化至[0,1]）"""
-    # 计算每个目标的 Min-Max 归一化因子
+    """Plot the three objective values across episodes (normalized to [0,1])"""
+    # Compute Min-Max normalization factors for each objective
     def normalize(data):
         data = np.array(data)
         min_val = np.min(data)
@@ -1374,10 +1374,10 @@ def plot_three_goals_normalized(cmax_list, lb_list, tardy_list, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.show()
-    print(f"三个目标曲线（归一化）已保存至 {save_path}")
+    print(f"Three objective curves (normalized) saved to {save_path}")
 
 def plot_kl_divergence(kl_list, save_path):
-    """单独绘制 KL 散度曲线"""
+    """Plot the KL divergence curve separately"""
     plt.figure(figsize=(10, 6))
     plt.plot(kl_list, alpha=0.3, color='orange', label='Raw')
     window = min(50, len(kl_list))
@@ -1396,10 +1396,10 @@ def plot_kl_divergence(kl_list, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.show()
-    print(f"KL散度曲线已保存至 {save_path}")
+    print(f"KL divergence curve saved to {save_path}")
 
 def plot_loss(loss_list, save_path):
-    """单独绘制总损失曲线"""
+    """Plot the total loss curve separately"""
     plt.figure(figsize=(10, 6))
     plt.plot(loss_list, alpha=0.3, color='red', label='Raw')
     window = min(50, len(loss_list))
@@ -1418,33 +1418,33 @@ def plot_loss(loss_list, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.show()
-    print(f"总损失曲线已保存至 {save_path}")
+    print(f"Total loss curve saved to {save_path}")
 
 
-# 13. 主训练函数
+# 13. Main training function
 
 def train():
     cfg.use_disjunctive_edges = False
     os.makedirs(MODEL_DIR, exist_ok=True)
     best_model_path = os.path.join(MODEL_DIR, MODEL_NAME)
 
-    print(f"正在从目录 {INSTANCE_DIR} 加载所有实例...")
+    print(f"Loading all instances from directory {INSTANCE_DIR}...")
     instance_tuples, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability = load_all_instances(INSTANCE_DIR, FILE_PATTERN)
-    print(f"共加载 {len(instance_tuples)} 个实例")
-    print(f"全局最大作业数: {max_jobs}, 最大机器数: {max_machines}, 最大总工序数: {max_total_ops}, 最大加工时间: {max_proc_time}, 最大交货期: {max_due_date}, 最大机器能力: {max_capability}")
+    print(f"Loaded {len(instance_tuples)} instances")
+    print(f"Global max jobs: {max_jobs}, max machines: {max_machines}, max total operations: {max_total_ops}, max processing time: {max_proc_time}, max due date: {max_due_date}, max machine capability: {max_capability}")
 
-    # 构建实例对象
+    # Build instance objects
     instance_list = []
     for jobs, caps, dues, fname, size in instance_tuples:
         inst = MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability)
         instance_list.append(inst)
 
-    # 课程学习采样器
+    # Curriculum learning sampler
     curriculum_sampler = CurriculumSampler(instance_list, cfg)
 
     global_max_ops = max(inst.total_ops for inst in instance_list)
     global_max_machines = max(inst.n_machines for inst in instance_list)
-    print(f"全局最大工序数: {global_max_ops}, 全局最大机器数: {global_max_machines}")
+    print(f"Global max operations: {global_max_ops}, global max machines: {global_max_machines}")
 
     dim_op = 3
     dim_mac = 3
@@ -1483,7 +1483,7 @@ def train():
     best_norm_reward = -float('inf')
     reward_ema = None
 
-    # 新增三个目标列表
+    # New lists for three objectives
     cmax_list = []
     lb_list = []
     tardy_list = []
@@ -1497,10 +1497,10 @@ def train():
         progress = total_episodes / cfg.n_episodes
         curriculum_sampler.update_stage(progress)
 
-        # 检查 states 中是否有 None
+        # Check for None states
         for i in range(num_envs):
             if states[i] is None:
-                print(f"检测到状态 {i} 为 None，强制重置该环境")
+                print(f"Detected state {i} is None, forcibly resetting environment")
                 new_inst = curriculum_sampler.sample()
                 envs[i] = HeteroGraphEnv(new_inst, max_jobs, global_max_ops, global_max_machines, max_proc_time, max_due_date, cfg)
                 batch_env.envs[i] = envs[i]
@@ -1514,7 +1514,7 @@ def train():
             actions, probs_list, indices_list = agent.get_action_batch(states, env_insts)
             next_states, rewards, dones = batch_env.step(actions)
         except Exception as e:
-            print(f"采样或执行步时发生异常：{e}，重置所有环境并继续")
+            print(f"Exception occurred during sampling or step: {e}, resetting all environments and continuing")
             for j in range(num_envs):
                 new_inst = curriculum_sampler.sample()
                 envs[j] = HeteroGraphEnv(new_inst, max_jobs, global_max_ops, global_max_machines, max_proc_time, max_due_date, cfg)
@@ -1611,10 +1611,10 @@ def train():
             torch.cuda.empty_cache()
 
     pbar.close()
-    print("训练完成。")
-    print(f"最佳归一化奖励: {best_norm_reward:.4f}")
+    print("Training completed.")
+    print(f"Best normalized reward: {best_norm_reward:.4f}")
 
-    # 保存曲线图
+    # Save plots
     os.makedirs("../Figure_And_File/PPO_HGAT/Train", exist_ok=True)
     plot_three_goals(cmax_list, lb_list, tardy_list, "../Figure_And_File/PPO_HGAT/Train/three_goals.png")
     plot_three_goals_normalized(cmax_list, lb_list, tardy_list, "../Figure_And_File/PPO_HGAT/Train/three_goals_normalized.png")
@@ -1632,6 +1632,6 @@ if __name__ == "__main__":
             f.write("100 100\n")
             f.write("1 1\n")
             f.write("# Instance ID: 0\n# Size type: small\n")
-        print(f"已生成示例实例文件: {example_file}")
+        print(f"Generated example instance file: {example_file}")
 
     train()

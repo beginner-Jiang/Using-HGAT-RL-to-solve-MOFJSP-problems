@@ -1,6 +1,6 @@
 """
-PPO_HGAT 测试程序
-加载训练好的最佳模型，在验证集实例上运行调度，计算测试指标
+PPO_HGAT Test Program
+Loads the trained best model, runs scheduling on test set instances, and computes test metrics
 """
 
 import torch
@@ -18,16 +18,16 @@ from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 import re
 
-# 全局配置
+# Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
 
-# 目标函数权重（与训练一致）
+# Objective function weights (consistent with training)
 W1 = 0.4
 W2 = 0.3
 W3 = 0.3
 
-# 随机种子
+# Random seed
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -35,7 +35,7 @@ torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
-# 默认路径
+# Default paths
 DEFAULT_INSTANCE_DIR = "../mo_fjsp_instances"
 DEFAULT_TEST_PATTERN = "mo_fjsp_*_test.txt"
 DEFAULT_MODEL_DIR = "../model/ppo_hgat"
@@ -44,7 +44,7 @@ DEFAULT_REWARD_SCALING = 50.0
 DEFAULT_REWARD_CLIP = 10.0
 
 
-# 数据读取与实例定义（与训练一致）
+# Data reading and instance definition (consistent with training)
 def parse_size_from_filename(filename: str) -> str:
     match = re.search(r'(small|medium|large)', filename)
     return match.group(1) if match else "unknown"
@@ -58,7 +58,7 @@ class Operation:
 
 
 def read_fjsp_instance(file_path: str):
-    """读取 FJSP 实例文件，返回作业列表、机器能力列表、交货期列表、文件名和规模"""
+    """Reads an FJSP instance file, returns job list, machine capabilities list, due dates list, filename, and size"""
     with open(file_path, 'r', encoding='utf-8') as f:
         lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     num_jobs, num_machines = map(int, lines[0].split())
@@ -69,9 +69,9 @@ def read_fjsp_instance(file_path: str):
     machine_capabilities = list(map(int, capabilities_line.split()))
 
     if len(due_dates) != num_jobs:
-        print(f"警告：交货期数量 ({len(due_dates)}) 与作业数 ({num_jobs}) 不匹配")
+        print(f"Warning: number of due dates ({len(due_dates)}) does not match number of jobs ({num_jobs})")
     if len(machine_capabilities) != num_machines:
-        print(f"警告：机器能力数量 ({len(machine_capabilities)}) 与机器数 ({num_machines}) 不匹配")
+        print(f"Warning: number of machine capabilities ({len(machine_capabilities)}) does not match number of machines ({num_machines})")
 
     jobs = []
     for job_idx in range(num_jobs):
@@ -97,10 +97,10 @@ def read_fjsp_instance(file_path: str):
 
 
 def load_all_instances(instance_dir: str, pattern: str):
-    """加载所有匹配的实例，并返回实例列表和全局最大值（包括机器能力）"""
+    """Loads all matching instances and returns the instance list and global maximums (including machine capability)"""
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
 
     instance_list = []
     max_jobs = 0
@@ -195,14 +195,14 @@ class MOFJSPInstance:
         self.due_dates_tensor = torch.tensor(due_dates, dtype=torch.float32, device=DEVICE)
         self.ops_per_job_tensor = torch.tensor(self.ops_per_job, dtype=torch.long, device=DEVICE)
 
-        # 能力特征归一化
+        # Capability feature normalization
         self.capability_tensor = torch.tensor(machine_capabilities, dtype=torch.float32, device=DEVICE)
         if global_max_capability > 0:
             self.capability_tensor = self.capability_tensor / global_max_capability
         else:
             self.capability_tensor = self.capability_tensor * 0.0
 
-        # 预计算边
+        # Precompute edges
         seq_src = []
         seq_dst = []
         for job in range(self.n_jobs):
@@ -241,7 +241,7 @@ class MOFJSPInstance:
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
 
-# 环境类（与训练一致）
+# Environment class (consistent with training)
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
                  global_max_proc_time, global_max_due_date, global_max_capability, cfg):
@@ -262,7 +262,7 @@ class HeteroGraphEnv:
         self.total_machine_nodes = instance.n_machines
 
         self.op_feat_dim = 3
-        self.mac_feat_dim = 3  # 与训练一致：负载、可用时间、能力
+        self.mac_feat_dim = 3  # Consistent with training: load, available time, capability
 
         self.op_predecessor = instance.op_predecessor
         self.job_op_to_idx = instance.job_op_to_idx
@@ -293,7 +293,7 @@ class HeteroGraphEnv:
                 job_id_norm = job / max(1, global_max_jobs - 1)
                 self.static_op_feats[node_idx, :] = torch.tensor([step_idx, due_time, job_id_norm], device=DEVICE)
 
-        # 静态机器特征：能力（第三维）
+        # Static machine features: capability (third dimension)
         self.static_mac_feats = torch.zeros((self.global_max_machines, self.mac_feat_dim), dtype=torch.float32, device=DEVICE)
         for m in range(instance.n_machines):
             self.static_mac_feats[m, 2] = instance.capability_tensor[m]
@@ -301,7 +301,7 @@ class HeteroGraphEnv:
         self.reset()
 
     def reset(self):
-        self.scheduled_ops = []  # 可选，用于甘特图
+        self.scheduled_ops = []  # Optional, for Gantt charts
         self.machine_available_time = torch.zeros(self.inst.n_machines, dtype=torch.float32, device=DEVICE)
         self.machine_load = torch.zeros(self.inst.n_machines, dtype=torch.float32, device=DEVICE)
         self.job_next_op = torch.zeros(self.inst.n_jobs, dtype=torch.long, device=DEVICE)
@@ -327,7 +327,7 @@ class HeteroGraphEnv:
         start = torch.maximum(job_ready, machine_ready)
         end = start + p_time
 
-        # 记录调度（可选）
+        # Record schedule (optional)
         self.scheduled_ops.append((job.item(), op.item(), machine.item(), start.item(), end.item()))
 
         self.machine_available_time[machine.long()] = end
@@ -375,7 +375,7 @@ class HeteroGraphEnv:
         avail_norm = self.machine_available_time / (self.current_time + 1.0 + EPS)
         self.mac_feats_t[:self.inst.n_machines, 0] = load_norm
         self.mac_feats_t[:self.inst.n_machines, 1] = avail_norm
-        # 第三维（能力）保持静态不变
+        # Third dimension (capability) remains static
 
         unsched_mask = ~self.op_scheduled
 
@@ -429,7 +429,7 @@ class HeteroGraphEnv:
         }
 
 
-# 网络定义（与训练一致）
+# Network definitions (consistent with training)
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain=gain)
@@ -659,22 +659,22 @@ class HierarchicalPPOAgent:
             self.lower.load_state_dict(checkpoint['lower'])
             self.critic_u.load_state_dict(checkpoint['critic_u'])
             self.critic_l.load_state_dict(checkpoint['critic_l'])
-            # 强制转换为 float32
+            # Force conversion to float32
             self.gat = self.gat.float()
             self.upper = self.upper.float()
             self.lower = self.lower.float()
             self.critic_u = self.critic_u.float()
             self.critic_l = self.critic_l.float()
-            # 重新创建优化器（可选，推理时不需要）
+            # Recreate optimizer (optional, not needed for inference)
             self.params = list(self.gat.parameters()) + list(self.upper.parameters()) + \
                           list(self.lower.parameters()) + list(self.critic_u.parameters()) + list(self.critic_l.parameters())
             self.opt = torch.optim.Adam(self.params, lr=self.lr)
             self.gamma = checkpoint.get('gamma', 0.99)
             self.beta = checkpoint.get('beta', 0.01)
-            print(f"模型已从 {path} 加载并转换为 float32，gamma={self.gamma:.3f}, beta={self.beta:.3f}")
+            print(f"Model loaded from {path} and converted to float32, gamma={self.gamma:.3f}, beta={self.beta:.3f}")
             return True
         else:
-            print(f"模型文件 {path} 不存在")
+            print(f"Model file {path} not found")
             return False
 
     def get_action(self, state, deterministic=True):
@@ -696,7 +696,7 @@ class HierarchicalPPOAgent:
             job = self.inst.op_idx_to_job[op_idx]
             op = self.inst.op_idx_to_op[op_idx]
 
-            # 机器掩码
+            # Machine mask
             mac_mask = torch.zeros(h_mac.shape[0], device=DEVICE)
             if op_idx < self.inst.total_ops:
                 mac_mask[:self.inst.n_machines] = self.inst.op_mac_mask[op_idx]
@@ -715,7 +715,7 @@ class HierarchicalPPOAgent:
         return (job, op, machine)
 
 
-# 测试辅助函数
+# Test helper functions
 def compute_final_objectives(env):
     Cmax = max(env.job_completion_time).item()
     LB = torch.std(env.machine_load).item() if env.machine_load.numel() > 0 else 0.0
@@ -738,22 +738,22 @@ def run_episode(agent, env, deterministic=True):
     return {'Cmax': Cmax, 'LB': LB, 'tardy': tardy, 'F': F, 'time': elapsed}
 
 
-# 主测试函数（支持命令行参数）
+# Main test function (supports command line arguments)
 def main():
-    parser = argparse.ArgumentParser(description="PPO_HGAT 模型测试脚本")
+    parser = argparse.ArgumentParser(description="PPO_HGAT Model Test Script")
     parser.add_argument('--instance_dir', type=str, default=DEFAULT_INSTANCE_DIR,
-                        help=f'测试实例所在目录 (默认: {DEFAULT_INSTANCE_DIR})')
+                        help=f'Test instance directory (default: {DEFAULT_INSTANCE_DIR})')
     parser.add_argument('--test_pattern', type=str, default=DEFAULT_TEST_PATTERN,
-                        help=f'测试文件匹配模式 (默认: "{DEFAULT_TEST_PATTERN}")')
+                        help=f'Test file matching pattern (default: "{DEFAULT_TEST_PATTERN}")')
     parser.add_argument('--model_dir', type=str, default=DEFAULT_MODEL_DIR,
-                        help=f'模型文件所在目录 (默认: {DEFAULT_MODEL_DIR})')
+                        help=f'Model directory (default: {DEFAULT_MODEL_DIR})')
     parser.add_argument('--model_name', type=str, default=DEFAULT_MODEL_NAME,
-                        help=f'模型文件名 (默认: {DEFAULT_MODEL_NAME})')
+                        help=f'Model file name (default: {DEFAULT_MODEL_NAME})')
     parser.add_argument('--reward_scaling', type=float, default=DEFAULT_REWARD_SCALING,
-                        help=f'奖励缩放因子 (默认: {DEFAULT_REWARD_SCALING})')
+                        help=f'Reward scaling factor (default: {DEFAULT_REWARD_SCALING})')
     parser.add_argument('--reward_clip', type=float, default=DEFAULT_REWARD_CLIP,
-                        help=f'奖励裁剪阈值 (默认: {DEFAULT_REWARD_CLIP})')
-    parser.add_argument('--no_cuda', action='store_true', help='强制使用 CPU')
+                        help=f'Reward clipping threshold (default: {DEFAULT_REWARD_CLIP})')
+    parser.add_argument('--no_cuda', action='store_true', help='Force CPU usage')
     args = parser.parse_args()
 
     if args.no_cuda:
@@ -762,26 +762,26 @@ def main():
         device = DEVICE
 
     print("=" * 50)
-    print("PPO_HGAT 模型测试")
+    print("PPO_HGAT Model Test")
     print("=" * 50)
-    print(f"使用设备: {device}")
-    print(f"实例目录: {args.instance_dir}")
-    print(f"模型目录: {args.model_dir}")
-    print(f"模型文件: {args.model_name}")
+    print(f"Using device: {device}")
+    print(f"Instance directory: {args.instance_dir}")
+    print(f"Model directory: {args.model_dir}")
+    print(f"Model file: {args.model_name}")
 
-    # 检查路径是否存在
+    # Check if paths exist
     if not os.path.isdir(args.instance_dir):
-        print(f"错误：实例目录不存在 - {args.instance_dir}")
+        print(f"Error: Instance directory does not exist - {args.instance_dir}")
         sys.exit(1)
     if not os.path.isdir(args.model_dir):
-        print(f"错误：模型目录不存在 - {args.model_dir}")
+        print(f"Error: Model directory does not exist - {args.model_dir}")
         sys.exit(1)
     model_path = os.path.join(args.model_dir, args.model_name)
     if not os.path.isfile(model_path):
-        print(f"错误：模型文件不存在 - {model_path}")
+        print(f"Error: Model file does not exist - {model_path}")
         sys.exit(1)
 
-    # 加载测试实例，获取全局最大值（包括机器能力）
+    # Load test instances and get global maximums (including machine capability)
     try:
         all_instances, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability = \
             load_all_instances(args.instance_dir, args.test_pattern)
@@ -789,24 +789,24 @@ def main():
         print(e)
         sys.exit(1)
 
-    print(f"\n全局最大作业数: {max_jobs}")
-    print(f"全局最大机器数: {max_machines}")
-    print(f"全局最大总工序数: {max_total_ops}")
-    print(f"全局最大加工时间: {max_proc_time}")
-    print(f"全局最大交货期: {max_due_date}")
-    print(f"全局最大机器能力: {max_capability}")
+    print(f"\nGlobal max jobs: {max_jobs}")
+    print(f"Global max machines: {max_machines}")
+    print(f"Global max total operations: {max_total_ops}")
+    print(f"Global max processing time: {max_proc_time}")
+    print(f"Global max due date: {max_due_date}")
+    print(f"Global max machine capability: {max_capability}")
 
-    # 构建实例对象
+    # Build instance objects
     test_instances = []
     for jobs, caps, dues, fname, size in all_instances:
         inst = MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability)
         test_instances.append(inst)
 
-    print(f"\n共加载 {len(test_instances)} 个测试实例：")
+    print(f"\nLoaded {len(test_instances)} test instances:")
     for inst in test_instances:
         print(f"  {inst.file_name}")
 
-    # 匹配训练模型
+    # Match training model
     dim_op = 3
     dim_mac = 3
     gat_hidden = 256
@@ -819,7 +819,7 @@ def main():
     critic_u = Critic(gat_out, policy_hidden).to(device)
     critic_l = Critic(gat_out, policy_hidden).to(device)
 
-    # 加载归一化统计量（如果存在）
+    # Load normalization statistics if they exist
     norm_path = os.path.join(args.model_dir, "state_norm.pt")
     if os.path.exists(norm_path):
         state_norm = TorchRunningMeanStd(shape=(gat_out,), device=device)
@@ -827,19 +827,19 @@ def main():
         state_norm.mean = norm_state['mean'].to(device)
         state_norm.var = norm_state['var'].to(device)
         state_norm.count = norm_state['count']
-        print("已加载状态归一化参数。")
+        print("State normalization parameters loaded.")
     else:
         state_norm = None
-        print("未找到状态归一化文件，跳过归一化。")
+        print("State normalization file not found, skipping normalization.")
 
-    # 创建 Agent（仅用于推理）
-    dummy_inst = test_instances[0]  # 临时实例，加载后会替换
+    # Create Agent (for inference only)
+    dummy_inst = test_instances[0]  # Temporary instance, will be replaced after loading
     agent = HierarchicalPPOAgent(dummy_inst, gat, upper, lower, critic_u, critic_l, state_norm=state_norm)
 
     if not agent.load(model_path):
         sys.exit(1)
 
-    # 创建配置对象（用于环境）
+    # Create configuration object (for environment)
     class DummyConfig:
         def __init__(self, scaling, clip):
             self.reward_scaling = scaling
@@ -848,13 +848,13 @@ def main():
 
     cfg = DummyConfig(args.reward_scaling, args.reward_clip)
 
-    # 运行测试
+    # Run tests
     results = []
     for idx, inst in enumerate(test_instances):
-        print(f"\n测试实例 {idx+1}/{len(test_instances)}: {inst.file_name}")
+        print(f"\nTesting instance {idx+1}/{len(test_instances)}: {inst.file_name}")
         env = HeteroGraphEnv(inst, max_jobs, max_total_ops, max_machines,
                              max_proc_time, max_due_date, max_capability, cfg)
-        agent.inst = inst  # 更新当前实例
+        agent.inst = inst  # Update current instance
         res = run_episode(agent, env, deterministic=True)
         results.append({
             'file': inst.file_name,
@@ -864,9 +864,9 @@ def main():
             'F': res['F'],
             'time': res['time']
         })
-        print(f"  Cmax={res['Cmax']:.2f}, LB={res['LB']:.4f}, Tardy={res['tardy']:.2f}, F={res['F']:.4f}, 耗时={res['time']:.4f}s")
+        print(f"  Cmax={res['Cmax']:.2f}, LB={res['LB']:.4f}, Tardy={res['tardy']:.2f}, F={res['F']:.4f}, Time={res['time']:.4f}s")
 
-    # 统计结果
+    # Statistical results
     F_values = [r['F'] for r in results]
     F_min = min(F_values)
     F_max = max(F_values)
@@ -875,15 +875,15 @@ def main():
     time_mean = np.mean([r['time'] for r in results])
 
     print("\n" + "=" * 50)
-    print("测试结果统计")
+    print("Test Results Summary")
     print("=" * 50)
-    print(f"测试实例数: {len(results)}")
-    print(f"目标函数值范围: [{F_min:.4f}, {F_max:.4f}]")
-    print(f"平均目标函数值 F_mean: {F_mean:.4f}")
-    print(f"目标函数值标准差 σ_F: {F_std:.4f}")
-    print(f"平均求解耗时 t_mean: {time_mean:.4f} 秒")
+    print(f"Number of test instances: {len(results)}")
+    print(f"Objective function value range: [{F_min:.4f}, {F_max:.4f}]")
+    print(f"Average objective function value F_mean: {F_mean:.4f}")
+    print(f"Objective function value standard deviation σ_F: {F_std:.4f}")
+    print(f"Average solving time t_mean: {time_mean:.4f} seconds")
 
-    print("\n详细结果（每个实例）：")
+    print("\nDetailed results (per instance):")
     print(f"{'File':<25} {'Cmax':<10} {'LB':<10} {'Tardy':<10} {'F':<10} {'Time(s)':<10}")
     for r in results:
         fname = r['file'][:23] + '...' if len(r['file']) > 23 else r['file']

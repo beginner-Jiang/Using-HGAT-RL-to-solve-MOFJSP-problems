@@ -1,13 +1,13 @@
 """
-参数敏感度检测脚本（优化版）
-基于已训练的最佳模型，对以下参数进行扫描：
-- 多目标权重 w (w1, w2, w3)
-- KL惩罚系数 beta
-- 折扣因子 gamma
-- 注意力头数 K
+Parameter Sensitivity Detection Script (Optimized Version)
+Based on the trained best model, scans the following parameters:
+- Multi-objective weights w (w1, w2, w3)
+- KL penalty coefficient beta
+- Discount factor gamma
+- Number of attention heads K
 
-对于每个参数的不同取值，重新训练模型（训练轮数可设），在测试集上评估平均加权目标值及各子目标值，
-并记录收敛所需的训练轮数。最后绘制曲线图并输出表格。
+For each parameter value, retrains the model (with settable number of training epochs), evaluates the average weighted objective value and sub-objectives on the test set,
+and records the number of training epochs required for convergence. Finally, plots curves and outputs a table.
 """
 
 import torch
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 import time
 import re
 
-# 全局配置
+# Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
 
@@ -56,7 +56,7 @@ NUM_EPOCHS = 10
 REWARD_SCALING = 5.0
 REWARD_CLIP = 2.0
 
-# GPU 版归一化工具
+# GPU-based normalization tool
 class TorchRunningMeanStd:
     def __init__(self, shape=(), epsilon=1e-4, device=DEVICE):
         self.mean = torch.zeros(shape, dtype=torch.float32, device=device)
@@ -87,7 +87,7 @@ class TorchRunningMeanStd:
     def normalize(self, x):
         return (x - self.mean) / (self.var.sqrt() + 1e-8)
 
-# 数据读取与实例定义
+# Data reading and instance definition
 def parse_size_from_filename(filename: str) -> str:
     match = re.search(r'(small|medium|large)', filename)
     return match.group(1) if match else "unknown"
@@ -131,7 +131,7 @@ def read_fjsp_instance(file_path: str):
 def load_all_instances(instance_dir: str, pattern: str):
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
     instance_list = []
     max_jobs = 0
     max_machines = 0
@@ -231,7 +231,7 @@ class MOFJSPInstance:
         else:
             self.capability_tensor = self.capability_tensor * 0.0
 
-        # 预计算边
+        # Precompute edges
         seq_src = []
         seq_dst = []
         for job in range(self.n_jobs):
@@ -269,7 +269,7 @@ class MOFJSPInstance:
     def get_pt(self, job, op, machine):
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
-# 异质析取图环境
+# Heterogeneous graph environment
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
                  global_max_proc_time, global_max_due_date, cfg):
@@ -448,7 +448,7 @@ class HeteroGraphEnv:
             'op_mask': op_mask,
         }
 
-# 异质图神经网络
+# Heterogeneous graph neural network
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain=gain)
@@ -656,7 +656,7 @@ class HierarchicalPPOAgent:
             self.opt.load_state_dict(checkpoint['optimizer'])
             self.gamma = checkpoint.get('gamma', 0.99)
             self.beta = checkpoint.get('beta', 0.01)
-            print(f"模型已从 {path} 加载，gamma={self.gamma:.3f}, beta={self.beta:.3f}")
+            print(f"Model loaded from {path}, gamma={self.gamma:.3f}, beta={self.beta:.3f}")
             return True
         return False
 
@@ -708,7 +708,7 @@ class HierarchicalPPOAgent:
         op_indices = torch.tensor([t['indices'][0] for t in trajectory], device=DEVICE)
         mac_indices = torch.tensor([t['indices'][1] for t in trajectory], device=DEVICE)
 
-        # 计算价值估计和GAE
+        # Compute value estimates and GAE
         values_u = []
         with torch.no_grad():
             for s in states:
@@ -730,7 +730,7 @@ class HierarchicalPPOAgent:
         returns = values_u + advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + EPS)
 
-        # 逐时间步更新
+        # Update per time step
         self.opt.zero_grad()
         total_loss = 0.0
         for i in range(T):
@@ -776,12 +776,12 @@ class HierarchicalPPOAgent:
         torch.nn.utils.clip_grad_norm_(self.params, 0.5)
         self.opt.step()
 
-# 评估函数
+# Evaluation function
 def evaluate(agent, test_instances, global_max_jobs, global_max_ops, global_max_machines, global_max_proc_time, global_max_due_date,
              cfg, deterministic=True):
     """
-    评估 agent 在测试实例上的性能。
-    test_instances: MOFJSPInstance 对象列表
+    Evaluates agent performance on test instances.
+    test_instances: list of MOFJSPInstance objects
     """
     agent.gat.eval()
     agent.upper.eval()
@@ -794,9 +794,9 @@ def evaluate(agent, test_instances, global_max_jobs, global_max_ops, global_max_
     Tardy_list = []
 
     with torch.no_grad():
-        # 直接迭代 MOFJSPInstance 对象，无需解包
+        # Iterate directly over MOFJSPInstance objects, no unpacking needed
         for inst in tqdm(test_instances, desc="Evaluating", leave=False):
-            agent.inst = inst  # 设置当前实例供 get_action 使用
+            agent.inst = inst  # Set current instance for get_action
             env = HeteroGraphEnv(inst, global_max_jobs, global_max_ops, global_max_machines,
                                  global_max_proc_time, global_max_due_date, cfg)
             state = env.reset()
@@ -816,10 +816,10 @@ def evaluate(agent, test_instances, global_max_jobs, global_max_ops, global_max_
 
     return np.mean(F_list), np.mean(Cmax_list), np.mean(LB_list), np.mean(Tardy_list)
 
-# 参数敏感度检测主函数
+# Parameter sensitivity scan main function
 def parameter_sensitivity_scan():
-    # 加载所有实例并划分
-    print("加载实例...")
+    # Load all instances and split
+    print("Loading instances...")
     all_instances, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability = load_all_instances(INSTANCE_DIR, FILE_PATTERN)
     random.shuffle(all_instances)
     total = len(all_instances)
@@ -828,10 +828,10 @@ def parameter_sensitivity_scan():
     train_tuples = all_instances[:train_end]
     val_tuples = all_instances[train_end:val_end]
     test_tuples = all_instances[val_end:]
-    print(f"训练集: {len(train_tuples)}, 验证集: {len(val_tuples)}, 测试集: {len(test_tuples)}")
-    print(f"全局最大作业数: {max_jobs}, 最大机器数: {max_machines}, 最大总工序数: {max_total_ops}, 最大加工时间: {max_proc_time}, 最大交货期: {max_due_date}, 最大能力值: {max_capability}")
+    print(f"Training set: {len(train_tuples)}, Validation set: {len(val_tuples)}, Test set: {len(test_tuples)}")
+    print(f"Global max jobs: {max_jobs}, max machines: {max_machines}, max total operations: {max_total_ops}, max processing time: {max_proc_time}, max due date: {max_due_date}, max capability: {max_capability}")
 
-    # 包装实例
+    # Wrap instances
     train_instances = [MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability) for jobs, caps, dues, fname, size in train_tuples]
     val_instances = [MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability) for jobs, caps, dues, fname, size in val_tuples]
     test_instances = [MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability) for jobs, caps, dues, fname, size in test_tuples]
@@ -842,7 +842,7 @@ def parameter_sensitivity_scan():
     out = 64
     lr = 3e-4
 
-    # 定义配置类
+    # Define configuration class
     class Config:
         def __init__(self, w1, w2, w3, gamma, beta, K):
             self.w1 = w1
@@ -874,15 +874,15 @@ def parameter_sensitivity_scan():
         'K': {'values': [], 'F': [], 'Cmax': [], 'LB': [], 'Tardy': [], 'epochs': []}
     }
 
-    # 计算总扫描次数用于进度条
+    # Compute total number of scans for progress bar
     total_scans = len(param_configs['w']) + len(param_configs['beta']) + len(param_configs['gamma']) + len(param_configs['K'])
-    pbar_scan = tqdm(total=total_scans, desc="参数扫描", position=0)
+    pbar_scan = tqdm(total=total_scans, desc="Parameter scanning", position=0)
 
-    # 扫描权重 w
-    print("\n========== 扫描多目标权重 w ==========")
+    # Scan weights w
+    print("\n========== Scanning multi-objective weights w ==========")
     for w_dict in param_configs['w']:
         w1, w2, w3 = w_dict['w1'], w_dict['w2'], w_dict['w3']
-        print(f"训练 w=({w1:.2f},{w2:.2f},{w3:.2f})")
+        print(f"Training w=({w1:.2f},{w2:.2f},{w3:.2f})")
         cfg = Config(w1, w2, w3, gamma=0.99, beta=0.01, K=4)
         gat = HeteroGAT(dim_op, dim_mac, hidden, out, num_heads=cfg.K).to(DEVICE)
         upper = UpperPolicy(out, hidden).to(DEVICE)
@@ -894,7 +894,7 @@ def parameter_sensitivity_scan():
                                      gamma=cfg.gamma, beta=cfg.beta, lr=lr, state_norm=state_norm)
 
         for ep in range(1, NUM_EPOCHS+1):
-            # 随机选择一个训练实例
+            # Randomly select a training instance
             inst = random.choice(train_instances)
             agent.inst = inst
             env = HeteroGraphEnv(inst, max_jobs, max_total_ops, max_machines, max_proc_time, max_due_date, cfg)
@@ -914,7 +914,7 @@ def parameter_sensitivity_scan():
                 state = next_state
             if len(traj) > 0:
                 agent.update(traj)
-        # 评估
+        # Evaluate
         F, C, L, T_val = evaluate(agent, test_instances, max_jobs, max_total_ops, max_machines, max_proc_time, max_due_date, cfg, deterministic=True)
         results['w']['values'].append(f"({w1},{w2},{w3})")
         results['w']['F'].append(F)
@@ -924,10 +924,10 @@ def parameter_sensitivity_scan():
         results['w']['epochs'].append(NUM_EPOCHS)
         pbar_scan.update(1)
 
-    # 扫描 beta
-    print("\n========== 扫描 KL惩罚系数 beta ==========")
+    # Scan beta
+    print("\n========== Scanning KL penalty coefficient beta ==========")
     for beta in param_configs['beta']:
-        print(f"训练 beta={beta}")
+        print(f"Training beta={beta}")
         cfg = Config(W1_DEFAULT, W2_DEFAULT, W3_DEFAULT, gamma=0.99, beta=beta, K=4)
         gat = HeteroGAT(dim_op, dim_mac, hidden, out, num_heads=cfg.K).to(DEVICE)
         upper = UpperPolicy(out, hidden).to(DEVICE)
@@ -966,10 +966,10 @@ def parameter_sensitivity_scan():
         results['beta']['epochs'].append(NUM_EPOCHS)
         pbar_scan.update(1)
 
-    # 扫描 gamma
-    print("\n========== 扫描折扣因子 gamma ==========")
+    # Scan gamma
+    print("\n========== Scanning discount factor gamma ==========")
     for gamma in param_configs['gamma']:
-        print(f"训练 gamma={gamma}")
+        print(f"Training gamma={gamma}")
         cfg = Config(W1_DEFAULT, W2_DEFAULT, W3_DEFAULT, gamma=gamma, beta=0.01, K=4)
         gat = HeteroGAT(dim_op, dim_mac, hidden, out, num_heads=cfg.K).to(DEVICE)
         upper = UpperPolicy(out, hidden).to(DEVICE)
@@ -1008,14 +1008,14 @@ def parameter_sensitivity_scan():
         results['gamma']['epochs'].append(NUM_EPOCHS)
         pbar_scan.update(1)
 
-    # 扫描 K
-    print("\n========== 扫描注意力头数 K ==========")
+    # Scan K
+    print("\n========== Scanning number of attention heads K ==========")
     for K in param_configs['K']:
         if out % K != 0:
-            print(f"警告: out_dim={out} 不能被 K={K} 整除，跳过")
+            print(f"Warning: out_dim={out} not divisible by K={K}, skipping")
             pbar_scan.update(1)
             continue
-        print(f"训练 K={K}")
+        print(f"Training K={K}")
         cfg = Config(W1_DEFAULT, W2_DEFAULT, W3_DEFAULT, gamma=0.99, beta=0.01, K=K)
         gat = HeteroGAT(dim_op, dim_mac, hidden, out, num_heads=cfg.K).to(DEVICE)
         upper = UpperPolicy(out, hidden).to(DEVICE)
@@ -1056,7 +1056,7 @@ def parameter_sensitivity_scan():
 
     pbar_scan.close()
 
-    # 绘制曲线
+    # Plot curves
     plt.style.use('seaborn-v0_8-whitegrid')
     plt.rcParams['axes.unicode_minus'] = False
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -1081,7 +1081,7 @@ def parameter_sensitivity_scan():
     plt.savefig('parameter_sensitivity.png', dpi=150)
     plt.show()
 
-    print("\n\n========== 参数敏感度检测结果汇总 ==========")
+    print("\n\n========== Parameter Sensitivity Detection Results Summary ==========")
     for param in param_names:
         print(f"\n--- {param} ---")
         df = pd.DataFrame({
@@ -1095,7 +1095,7 @@ def parameter_sensitivity_scan():
         print(df.to_string(index=False))
         df.to_csv(f'sensitivity_{param}.csv', index=False)
 
-    print("\n图形已保存为 parameter_sensitivity.png，表格已保存为 CSV 文件。")
+    print("\nPlot saved as parameter_sensitivity.png, tables saved as CSV files.")
 
 if __name__ == "__main__":
     parameter_sensitivity_scan()

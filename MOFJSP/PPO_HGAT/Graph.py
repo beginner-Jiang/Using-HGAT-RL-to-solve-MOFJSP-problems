@@ -1,7 +1,7 @@
 """
-PPO_HGAT 调度结果可视化程序（随机生成固定规模实例）
-生成一个 100 个作业 × 30 台机器的随机 FJSP 实例，
-利用训练好的最佳模型进行调度，并绘制甘特图
+PPO_HGAT Scheduling Result Visualization Program (Randomly Generated Fixed-Scale Instance)
+Generates a random FJSP instance with 100 jobs × 30 machines,
+uses the trained best model for scheduling, and draws a Gantt chart
 """
 
 import torch
@@ -16,7 +16,7 @@ import matplotlib.colors as mcolors
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 
-# 设置 matplotlib 全局参数
+# Set matplotlib global parameters
 plt.rcParams['font.family'] = 'Times New Roman'
 plt.rcParams['font.size'] = 10
 plt.rcParams['axes.titlesize'] = 20
@@ -27,21 +27,21 @@ plt.rcParams['legend.fontsize'] = 10
 plt.rcParams['legend.title_fontsize'] = 12
 plt.rcParams['figure.dpi'] = 300
 
-# 自定义网格样式
+# Custom grid style
 plt.rcParams['axes.grid'] = True
 plt.rcParams['grid.alpha'] = 0.3
 plt.rcParams['grid.linestyle'] = '--'
 
-# 全局配置
+# Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
 
-# 多目标权重（必须与训练时一致）
+# Multi-objective weights (must match training)
 W1 = 0.4
 W2 = 0.3
 W3 = 0.3
 
-# 固定随机种子，确保每次生成的实例一致
+# Fixed random seed to ensure consistent instance generation
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -52,15 +52,15 @@ if torch.cuda.is_available():
 MODEL_DIR = "../model/ppo_hgat"
 MODEL_NAME = "ppo_hgat_best.pth"
 
-# 奖励缩放系数（与训练一致）
+# Reward scaling coefficients (consistent with training)
 REWARD_SCALING = 5.0
 REWARD_CLIP = 2.0
 
-# 固定实例规模
+# Fixed instance scale
 N_JOBS = 100
 N_MACHINES = 30
 
-# 数据类定义（与训练一致）
+# Data class definition (consistent with training)
 @dataclass
 class Operation:
     job_id: int
@@ -90,7 +90,7 @@ def generate_random_instance(n_jobs: int, n_machines: int) -> Tuple[List[List[Op
         jobs.append(job_ops)
     return jobs, machine_capabilities, due_dates
 
-# ---------------------------- 实例类（与训练完全一致） ----------------------------
+# ---------------------------- Instance class (exactly consistent with training) ----------------------------
 class MOFJSPInstance:
     def __init__(self, jobs, machine_capabilities, due_dates, file_name, size,
                  global_max_proc_time, global_max_capability):
@@ -168,7 +168,7 @@ class MOFJSPInstance:
         else:
             self.capability_tensor = self.capability_tensor * 0.0
 
-        # 预计算边
+        # Precompute edges
         seq_src = []
         seq_dst = []
         for job in range(self.n_jobs):
@@ -206,7 +206,7 @@ class MOFJSPInstance:
     def get_pt(self, job, op, machine):
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
-# 环境类（与训练一致，添加调度记录）
+# Environment class (consistent with training, with scheduling recording)
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
                  global_max_proc_time, global_max_due_date, cfg):
@@ -225,7 +225,7 @@ class HeteroGraphEnv:
         self.total_machine_nodes = instance.n_machines
 
         self.op_feat_dim = 3
-        self.mac_feat_dim = 3                     # 含能力维度
+        self.mac_feat_dim = 3                     # Includes capability dimension
 
         self.op_predecessor = instance.op_predecessor
         self.job_op_to_idx = instance.job_op_to_idx
@@ -256,16 +256,16 @@ class HeteroGraphEnv:
                 job_id_norm = job / max(1, global_max_jobs - 1)
                 self.static_op_feats[node_idx, :] = torch.tensor([step_idx, due_time, job_id_norm], device=DEVICE)
 
-        # 静态机器特征：前两维动态更新，第三维为归一化能力
+        # Static machine features: first two dimensions are dynamic, third is normalized capability
         self.static_mac_feats = torch.zeros((self.global_max_machines, self.mac_feat_dim), dtype=torch.float32, device=DEVICE)
         for m in range(instance.n_machines):
             self.static_mac_feats[m, 2] = instance.capability_tensor[m]
 
-        self.scheduled_ops = []  # 用于甘特图记录
+        self.scheduled_ops = []  # For Gantt chart recording
         self.reset()
 
     def reset(self):
-        self.scheduled_ops = []  # 清空记录
+        self.scheduled_ops = []  # Clear recording
         self.machine_available_time = torch.zeros(self.inst.n_machines, dtype=torch.float32, device=DEVICE)
         self.machine_load = torch.zeros(self.inst.n_machines, dtype=torch.float32, device=DEVICE)
         self.job_next_op = torch.zeros(self.inst.n_jobs, dtype=torch.long, device=DEVICE)
@@ -291,7 +291,7 @@ class HeteroGraphEnv:
         start = torch.maximum(job_ready, machine_ready)
         end = start + p_time
 
-        # 记录调度（用于甘特图）
+        # Record schedule (for Gantt chart)
         self.scheduled_ops.append((job.item(), op.item(), machine.item(), start.item(), end.item()))
 
         self.machine_available_time[machine.long()] = end
@@ -337,7 +337,7 @@ class HeteroGraphEnv:
         total_load = self.machine_load.sum()
         load_norm = self.machine_load / (total_load + EPS)
         avail_norm = self.machine_available_time / (self.current_time + 1.0 + EPS)
-        # 更新动态部分，能力保持不变
+        # Update dynamic part, capability remains unchanged
         self.mac_feats_t[:self.inst.n_machines, 0] = load_norm
         self.mac_feats_t[:self.inst.n_machines, 1] = avail_norm
 
@@ -392,7 +392,7 @@ class HeteroGraphEnv:
             'op_mask': op_mask,
         }
 
-# ---------------------------- 网络定义（与训练一致） ----------------------------
+# ---------------------------- Network definitions (consistent with training) ----------------------------
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain=gain)
@@ -604,14 +604,14 @@ class HierarchicalPPOAgent:
 
     def load(self, path):
         if os.path.exists(path):
-            # 忽略 FutureWarning，暂时使用 weights_only=False
+            # Ignore FutureWarning, temporarily use weights_only=False
             checkpoint = torch.load(path, map_location=DEVICE, weights_only=False)
             self.gat.load_state_dict(checkpoint['gat'])
             self.upper.load_state_dict(checkpoint['upper'])
             self.lower.load_state_dict(checkpoint['lower'])
             self.critic_u.load_state_dict(checkpoint['critic_u'])
             self.critic_l.load_state_dict(checkpoint['critic_l'])
-            # 强制转换为 float32
+            # Force conversion to float32
             self.gat = self.gat.float()
             self.upper = self.upper.float()
             self.lower = self.lower.float()
@@ -642,7 +642,7 @@ class HierarchicalPPOAgent:
             job = self.inst.op_idx_to_job[op_idx]
             op = self.inst.op_idx_to_op[op_idx]
 
-            # 机器掩码
+            # Machine mask
             mac_mask = torch.zeros(h_mac.shape[0], device=DEVICE)
             if op_idx < self.inst.total_ops:
                 mac_mask[:self.inst.n_machines] = self.inst.op_mac_mask[op_idx]
@@ -660,7 +660,7 @@ class HierarchicalPPOAgent:
 
         return (job, op, machine)
 
-# 甘特图绘制（修改部分：机器编号从1开始）
+# Gantt chart drawing (modified: machine numbers start from 1)
 def plot_gantt(env, save_path=None):
     """
     Plot a publication-quality Gantt chart from the environment's scheduled operations.
@@ -675,12 +675,12 @@ def plot_gantt(env, save_path=None):
     num_machines = env.inst.n_machines
     num_jobs = env.inst.n_jobs
 
-    # 生成柔和颜色（HSV空间，固定饱和度和明度）
+    # Generate soft colors (HSV space, fixed saturation and value)
     def get_soft_colors(n):
         colors = []
         for i in range(n):
             hue = i / n
-            # 饱和度和明度适中，得到柔和颜色
+            # Moderate saturation and value for soft colors
             rgb = mcolors.hsv_to_rgb([hue, 0.6, 0.9])
             colors.append(rgb)
         return colors
@@ -688,26 +688,26 @@ def plot_gantt(env, save_path=None):
     job_colors_list = get_soft_colors(num_jobs)
     job_colors = {job: job_colors_list[job] for job in range(num_jobs)}
 
-    # 创建图形，设置合理尺寸
+    # Create figure with appropriate size
     fig, ax = plt.subplots(figsize=(24, 16), dpi=300)
 
-    # 绘制每个工序的矩形条
+    # Draw bars for each operation
     for (job, op, machine, start, end) in scheduled_ops:
         ax.barh(y=machine, width=end-start, left=start, height=0.8,
                 color=job_colors[job], edgecolor='black', linewidth=0.2, alpha=0.9)
 
-    # 设置坐标轴标签
+    # Set axis labels
     ax.set_xlabel('Makespan', fontsize=20, fontweight='bold')
-    # 设置 y 轴刻度标签为 Machine1, Machine2, ...，字体大小与横坐标标题一致
+    # Set y-axis tick labels as Machine1, Machine2, ... with font size matching x-axis title
     ax.set_yticks(range(num_machines))
-    ax.set_yticklabels([f'Machine{m+1}' for m in range(num_machines)], fontsize=20)  # 修改处：m+1
-    # 放大 x 轴刻度标签
+    ax.set_yticklabels([f'Machine{m+1}' for m in range(num_machines)], fontsize=20)  # Modification: m+1
+    # Enlarge x-axis tick labels
     ax.tick_params(axis='x', labelsize=16)
 
-    # 添加网格线（仅垂直方向）
+    # Add grid lines (vertical only)
     ax.grid(axis='x', linestyle='--', alpha=0.5, linewidth=0.5)
 
-    # 调整布局
+    # Adjust layout
     plt.subplots_adjust(right=0.95)
 
     if save_path:
@@ -715,16 +715,16 @@ def plot_gantt(env, save_path=None):
         print(f"Gantt chart saved to {save_path}")
     plt.show()
 
-# 主程序
+# Main program
 def main():
     print("=" * 50)
     print("Generating random FJSP instance (100 jobs × 30 machines)")
     print("=" * 50)
 
-    # 1. 生成随机实例
+    # 1. Generate random instance
     jobs, machine_capabilities, due_dates = generate_random_instance(N_JOBS, N_MACHINES)
 
-    # 计算全局最大值（用于归一化）
+    # Compute global maximums (for normalization)
     all_times = []
     for job_ops in jobs:
         for op in job_ops:
@@ -736,7 +736,7 @@ def main():
     global_max_ops = sum(len(j) for j in jobs)
     global_max_machines = N_MACHINES
 
-    # 2. 构建实例对象
+    # 2. Build instance object
     instance = MOFJSPInstance(
         jobs=jobs,
         machine_capabilities=machine_capabilities,
@@ -748,12 +748,12 @@ def main():
     )
     print(f"Instance generated: Jobs={instance.n_jobs}, Machines={instance.n_machines}, Total operations={instance.total_ops}")
 
-    # 3. 初始化网络（维度与训练一致）
+    # 3. Initialize networks (dimensions consistent with training)
     dim_op = 3
     dim_mac = 3
-    gat_hidden = 256          # GAT 隐藏层维度
-    gat_out = 256             # GAT 输出维度
-    policy_hidden = 512       # 策略网络隐藏层维度
+    gat_hidden = 256          # GAT hidden layer dimension
+    gat_out = 256             # GAT output dimension
+    policy_hidden = 512       # Policy network hidden layer dimension
 
     gat = HeteroGAT(dim_op, dim_mac, gat_hidden, gat_out).to(DEVICE)
     upper = UpperPolicy(gat_out, policy_hidden).to(DEVICE)
@@ -761,7 +761,7 @@ def main():
     critic_u = Critic(gat_out, policy_hidden).to(DEVICE)
     critic_l = Critic(gat_out, policy_hidden).to(DEVICE)
 
-    # 4. 加载归一化统计量（如果存在）
+    # 4. Load normalization statistics if they exist
     norm_path = os.path.join(MODEL_DIR, "state_norm.pt")
     if os.path.exists(norm_path):
         state_norm = TorchRunningMeanStd(shape=(gat_out,), device=DEVICE)
@@ -772,21 +772,21 @@ def main():
         state_norm = None
         print("State normalization file not found, proceeding without normalization.")
 
-    # 5. 创建 Agent 并加载模型
+    # 5. Create Agent and load model
     agent = HierarchicalPPOAgent(instance, gat, upper, lower, critic_u, critic_l, state_norm)
     model_path = os.path.join(MODEL_DIR, MODEL_NAME)
     if not agent.load(model_path):
         print("Failed to load model, check the path.")
         return
 
-    # 6. 创建环境配置
+    # 6. Create environment configuration
     class DummyConfig:
         reward_scaling = REWARD_SCALING
         reward_clip = REWARD_CLIP
         use_disjunctive_edges = False
     cfg = DummyConfig()
 
-    # 7. 运行调度（确定性策略）
+    # 7. Run scheduling (deterministic policy)
     env = HeteroGraphEnv(
         instance,
         global_max_jobs=global_max_jobs,
@@ -804,12 +804,12 @@ def main():
         next_state, _, done = env.step(action)
         state = next_state
         step += 1
-        if step > 20000:  # 防止死循环
+        if step > 20000:  # Prevent infinite loop
             break
 
     print(f"Scheduling completed, total steps: {step}")
 
-    # 8. 计算最终指标
+    # 8. Compute final metrics
     Cmax = max(env.job_completion_time).item()
     LB = torch.std(env.machine_load).item() if env.machine_load.numel() > 0 else 0.0
     tardy = torch.sum(torch.clamp(env.job_completion_time - env.due_dates_tensor, min=0)).item()
@@ -820,7 +820,7 @@ def main():
     print(f"  Tardy  = {tardy:.2f}")
     print(f"  F      = {F:.4f}")
 
-    # 9. 绘制甘特图
+    # 9. Draw Gantt chart
     save_path = "../Figure_And_File/PPO_HGAT/Graph/gantt_chart_100x30.png"
     plot_gantt(env, save_path=save_path)
 

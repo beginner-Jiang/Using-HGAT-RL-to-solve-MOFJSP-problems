@@ -1,9 +1,9 @@
 """
-PPO_HGAT 验证程序
-加载训练好的最佳模型，在验证集实例上运行调度，计算验证指标：
-- 归一化累积奖励 R = 总奖励 / 总工序数
-- 平均 KL 散度（上层+下层）
-- 平均总损失 L(θ) = 平均策略损失 + value_coef * 平均价值损失 + beta * 平均 KL
+PPO_HGAT Validation Program
+Loads the trained best model, runs scheduling on validation set instances, and computes validation metrics:
+- Normalized cumulative reward R = total reward / total number of operations
+- Average KL divergence (higher + lower)
+- Average total loss L(θ) = average policy loss + value_coef * average value loss + beta * average KL
 """
 
 import torch
@@ -18,7 +18,7 @@ from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 import re
 
-# 全局配置
+# Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
 
@@ -34,19 +34,19 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 INSTANCE_DIR = "../mo_fjsp_instances"
-VAL_FILE_PATTERN = "mo_fjsp_*_val.txt"          # 验证集文件模式
+VAL_FILE_PATTERN = "mo_fjsp_*_val.txt"          # Validation set file pattern
 MODEL_DIR = "../model/ppo_hgat"
 MODEL_NAME = "ppo_hgat_best.pth"
 REWARD_SCALING = 5.0
 REWARD_CLIP = 2.0
 
-# PPO 超参数（应与训练时一致）
+# PPO hyperparameters (should match training)
 GAMMA = 0.99
 LAM = 0.95
 CLIP_EPSILON = 0.2
 VALUE_COEF = 0.5
 
-# 数据读取与实例定义（与训练一致）
+# Data reading and instance definition (same as training)
 def parse_size_from_filename(filename: str) -> str:
     match = re.search(r'(small|medium|large)', filename)
     return match.group(1) if match else "unknown"
@@ -90,7 +90,7 @@ def read_fjsp_instance(file_path: str):
 def load_all_instances(instance_dir: str, pattern: str):
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
     instance_list = []
     max_jobs = 0
     max_machines = 0
@@ -190,7 +190,7 @@ class MOFJSPInstance:
         else:
             self.capability_tensor = self.capability_tensor * 0.0
 
-        # 预计算边
+        # Precompute edges
         seq_src = []
         seq_dst = []
         for job in range(self.n_jobs):
@@ -228,7 +228,7 @@ class MOFJSPInstance:
     def get_pt(self, job, op, machine):
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
-# 环境类（与训练一致）
+# Environment class (same as training)
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
                  global_max_proc_time, global_max_due_date, cfg):
@@ -318,7 +318,7 @@ class HeteroGraphEnv:
         self.op_finish_time[op_idx] = end
         self.op_scheduled[op_idx] = True
 
-        # 即时奖励
+        # Immediate reward
         old_LB = torch.std(self.machine_load)
         temp_load = self.machine_load.clone()
         temp_load[machine.long()] += p_time
@@ -408,7 +408,7 @@ class HeteroGraphEnv:
             'op_mask': op_mask,
         }
 
-# 网络定义（与训练一致）
+# Network definitions (same as training)
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain=gain)
@@ -602,7 +602,7 @@ class TorchRunningMeanStd:
     def normalize(self, x):
         return (x - self.mean) / (self.var.sqrt() + 1e-8)
 
-# PPO Agent（含验证所需的信息获取）
+# PPO Agent (includes information needed for validation)
 class HierarchicalPPOAgent:
     def __init__(self, inst, gat, upper, lower, critic_u, critic_l, state_norm=None, gamma=0.99, lam=0.95, clip=0.2, beta=0.01, lr=3e-4):
         self.inst = inst
@@ -631,34 +631,34 @@ class HierarchicalPPOAgent:
             self.lower.load_state_dict(checkpoint['lower'])
             self.critic_u.load_state_dict(checkpoint['critic_u'])
             self.critic_l.load_state_dict(checkpoint['critic_l'])
-            # 强制转换为 float32
+            # Force conversion to float32
             self.gat = self.gat.float()
             self.upper = self.upper.float()
             self.lower = self.lower.float()
             self.critic_u = self.critic_u.float()
             self.critic_l = self.critic_l.float()
-            # 重新创建优化器（可选，推理时不需要）
+            # Recreate optimizer (optional, not needed for inference)
             self.params = list(self.gat.parameters()) + list(self.upper.parameters()) + \
                           list(self.lower.parameters()) + list(self.critic_u.parameters()) + list(self.critic_l.parameters())
             self.opt = torch.optim.Adam(self.params, lr=self.lr)
             self.gamma = checkpoint.get('gamma', 0.99)
             self.lam = checkpoint.get('lam', 0.95)
             self.beta = checkpoint.get('beta', 0.01)
-            print(f"模型已从 {path} 加载并转换为 float32，gamma={self.gamma:.3f}, lam={self.lam:.3f}, beta={self.beta:.3f}")
+            print(f"Model loaded from {path} and converted to float32, gamma={self.gamma:.3f}, lam={self.lam:.3f}, beta={self.beta:.3f}")
             return True
         else:
-            print(f"模型文件 {path} 不存在")
+            print(f"Model file {path} not found")
             return False
 
     def get_action_and_info(self, state, deterministic=False):
-        """返回动作、上层概率向量、下层概率向量、价值、上层动作索引、下层动作索引"""
+        """Returns action, upper probability vector, lower probability vector, value, upper action index, lower action index"""
         with torch.no_grad():
             h_op, h_mac = self.gat(state)
             g_emb = h_op.mean(dim=0)
             if self.state_norm is not None:
                 g_emb = self.state_norm.normalize(g_emb)
 
-            # 上层
+            # Upper level
             op_mask = state['op_mask']
             u_probs = self.upper(g_emb, h_op, op_mask)
             if deterministic:
@@ -668,7 +668,7 @@ class HierarchicalPPOAgent:
                 op_idx = dist_u.sample()
             log_prob_u = torch.log(u_probs[op_idx] + EPS)
 
-            # 下层
+            # Lower level
             mac_mask = torch.zeros(h_mac.shape[0], device=DEVICE)
             if op_idx < self.inst.total_ops:
                 mac_mask[:self.inst.n_machines] = self.inst.op_mac_mask[op_idx]
@@ -681,7 +681,7 @@ class HierarchicalPPOAgent:
                 mac_idx = dist_l.sample()
             log_prob_l = torch.log(l_probs[mac_idx] + EPS)
 
-            # 价值估计
+            # Value estimation
             value_u = self.critic_u(g_emb)
             value_l = self.critic_l(g_emb)
             value = value_u + value_l
@@ -692,9 +692,9 @@ class HierarchicalPPOAgent:
 
         return (job, op, machine), u_probs, l_probs, op_idx, mac_idx, value
 
-# ---------------------------- 验证函数（完全复现训练更新逻辑） ----------------------------
+# ---------------------------- Validation function (fully reproduces training update logic) ----------------------------
 def compute_gae(rewards, values, dones, gamma, lam):
-    """计算广义优势估计 (GAE)"""
+    """Compute Generalized Advantage Estimation (GAE)"""
     advantages = []
     gae = 0
     for t in reversed(range(len(rewards))):
@@ -709,29 +709,29 @@ def compute_gae(rewards, values, dones, gamma, lam):
 
 def run_episode(agent, env, deterministic=False):
     """
-    运行一个 episode，返回：
-        norm_reward : 归一化累积奖励（总奖励 / 总工序数）
-        avg_kl      : 平均 KL 散度（上层+下层）
-        total_loss  : 平均总损失（与训练 stats['total_loss'] 一致）
+    Run one episode, returns:
+        norm_reward : normalized cumulative reward (total reward / total number of operations)
+        avg_kl      : average KL divergence (upper + lower)
+        total_loss  : average total loss (consistent with training stats['total_loss'])
     """
     state = env.reset()
     done = False
     rewards = []
     dones = []
-    values = []                 # critic 价值
-    states = []                 # 状态字典
-    old_u_probs_list = []       # 上层概率向量
-    old_l_probs_list = []       # 下层概率向量
-    op_indices = []             # 上层动作索引
-    mac_indices = []            # 下层动作索引
+    values = []                 # critic values
+    states = []                 # state dicts
+    old_u_probs_list = []       # upper probability vectors
+    old_l_probs_list = []       # lower probability vectors
+    op_indices = []             # upper action indices
+    mac_indices = []            # lower action indices
 
-    # 收集轨迹
+    # Collect trajectory
     while not done:
         action, u_probs, l_probs, op_idx, mac_idx, value = agent.get_action_and_info(state, deterministic=deterministic)
         next_state, reward, done = env.step(action)
 
         states.append(state)
-        old_u_probs_list.append(u_probs.cpu())      # 保存到 CPU 以减少显存占用
+        old_u_probs_list.append(u_probs.cpu())      # save to CPU to reduce memory usage
         old_l_probs_list.append(l_probs.cpu())
         op_indices.append(op_idx.cpu())
         mac_indices.append(mac_idx.cpu())
@@ -745,7 +745,7 @@ def run_episode(agent, env, deterministic=False):
     total_reward = sum(rewards)
     norm_reward = total_reward / env.inst.total_ops
 
-    # 将收集的数据转移到设备
+    # Transfer collected data to device
     op_indices_t = torch.tensor(op_indices, device=DEVICE)
     mac_indices_t = torch.tensor(mac_indices, device=DEVICE)
     old_u_probs = torch.stack([p.to(DEVICE) for p in old_u_probs_list])   # (T, N_op)
@@ -753,12 +753,12 @@ def run_episode(agent, env, deterministic=False):
     values_t = torch.tensor(values, device=DEVICE, dtype=torch.float32)
     rewards_t = torch.tensor(rewards, device=DEVICE, dtype=torch.float32)
 
-    # 计算优势与回报
+    # Compute advantages and returns
     advantages = compute_gae(rewards, values, dones, agent.gamma, agent.lam)
     advantages_t = torch.tensor(advantages, device=DEVICE, dtype=torch.float32)
     returns_t = advantages_t + values_t
 
-    # 优势归一化（与训练一致）
+    # Advantage normalization (consistent with training)
     adv_std = advantages_t.std()
     if adv_std < 1e-8:
         advantages_t = advantages_t - advantages_t.mean()
@@ -768,7 +768,7 @@ def run_episode(agent, env, deterministic=False):
     advantages_t = torch.nan_to_num(advantages_t, nan=0.0, posinf=1.0, neginf=-1.0)
     returns_t = torch.nan_to_num(returns_t, nan=0.0, posinf=1.0, neginf=-1.0)
 
-    # 重新前向计算当前概率（由于模型未变，结果与 old 相同，但计算过程保持一致）
+    # Recompute current probabilities (since model is unchanged, results are same as old, but we keep the computation process consistent)
     curr_u_probs_list = []
     curr_l_probs_list = []
     for i in range(T):
@@ -778,7 +778,7 @@ def run_episode(agent, env, deterministic=False):
             g_emb = agent.state_norm.normalize(g_emb)
         u_probs = agent.upper(g_emb, h_op, states[i]['op_mask'])
         curr_u_probs_list.append(u_probs.unsqueeze(0))
-        # 下层
+        # Lower level
         op_idx_i = op_indices_t[i]
         mac_mask = torch.zeros(h_mac.shape[0], device=DEVICE)
         if op_idx_i < agent.inst.total_ops:
@@ -789,13 +789,13 @@ def run_episode(agent, env, deterministic=False):
     curr_u_probs = torch.cat(curr_u_probs_list, dim=0)   # (T, N_op)
     curr_l_probs = torch.cat(curr_l_probs_list, dim=0)   # (T, N_mac)
 
-    # 逐时间步计算损失
+    # Compute loss per time step
     policy_loss_u_sum = 0.0
     policy_loss_l_sum = 0.0
     kl_u_sum = 0.0
     kl_l_sum = 0.0
     for t in range(T):
-        # 上层
+        # Upper level
         old_u = old_u_probs[t]
         curr_u = curr_u_probs[t]
         op_idx = op_indices_t[t]
@@ -806,7 +806,7 @@ def run_episode(agent, env, deterministic=False):
         surr2_u = torch.clamp(ratio_u, 1 - agent.clip, 1 + agent.clip) * advantages_t[t]
         policy_loss_u_sum += -torch.min(surr1_u, surr2_u).item()
 
-        # 下层
+        # Lower level
         old_l = old_l_probs[t]
         curr_l = curr_l_probs[t]
         mac_idx = mac_indices_t[t]
@@ -817,51 +817,51 @@ def run_episode(agent, env, deterministic=False):
         surr2_l = torch.clamp(ratio_l, 1 - agent.clip, 1 + agent.clip) * advantages_t[t]
         policy_loss_l_sum += -torch.min(surr1_l, surr2_l).item()
 
-        # KL 散度：KL(old||new) = sum(old * (log(old) - log(new)))
+        # KL divergence: KL(old||new) = sum(old * (log(old) - log(new)))
         kl_u = (old_u * (torch.log(old_u + EPS) - torch.log(curr_u + EPS))).sum().item()
         kl_l = (old_l * (torch.log(old_l + EPS) - torch.log(curr_l + EPS))).sum().item()
         kl_u_sum += kl_u
         kl_l_sum += kl_l
 
-    # 价值损失
+    # Value loss
     value_loss = F.mse_loss(values_t, returns_t).item()
 
-    # 平均
+    # Averages
     avg_policy_loss_u = policy_loss_u_sum / T
     avg_policy_loss_l = policy_loss_l_sum / T
     avg_kl = (kl_u_sum + kl_l_sum) / T
     avg_value_loss = value_loss
 
-    # 总损失（与训练 stats['total_loss'] 一致）
+    # Total loss (consistent with training stats['total_loss'])
     total_loss = avg_policy_loss_u + avg_policy_loss_l + VALUE_COEF * avg_value_loss + agent.beta * avg_kl
 
     return norm_reward, avg_kl, total_loss
 
-# 主验证函数
+# Main validation function
 def validate():
     print("=" * 50)
-    print("PPO_HGAT 模型验证（指标计算与训练完全一致）")
+    print("PPO_HGAT Model Validation (Metrics Computed Exactly as in Training)")
     print("=" * 50)
 
-    # 加载验证集实例，获取全局最大值
+    # Load validation set instances and get global maximums
     try:
         all_instances, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability = load_all_instances(INSTANCE_DIR, VAL_FILE_PATTERN)
     except FileNotFoundError as e:
         print(e)
         return
 
-    print(f"全局最大作业数: {max_jobs}, 最大机器数: {max_machines}, 最大总工序数: {max_total_ops}, 最大加工时间: {max_proc_time}, 最大交货期: {max_due_date}, 最大能力值: {max_capability}")
+    print(f"Global max jobs: {max_jobs}, max machines: {max_machines}, max total operations: {max_total_ops}, max processing time: {max_proc_time}, max due date: {max_due_date}, max capability: {max_capability}")
 
     val_instances = []
     for jobs, caps, dues, fname, size in all_instances:
         inst = MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability)
         val_instances.append(inst)
 
-    print(f"共加载 {len(val_instances)} 个验证集实例：")
+    print(f"Loaded {len(val_instances)} validation set instances:")
     for inst in val_instances:
         print(f"  {inst.file_name}")
 
-    # 初始化网络
+    # Initialize networks
     dim_op = 3
     dim_mac = 3
     gat_hidden = 256
@@ -873,7 +873,7 @@ def validate():
     critic_u = Critic(gat_out, policy_hidden).to(DEVICE)
     critic_l = Critic(gat_out, policy_hidden).to(DEVICE)
 
-    # 加载归一化统计量（如果存在）
+    # Load normalization statistics if they exist
     norm_path = os.path.join(MODEL_DIR, "state_norm.pt")
     if os.path.exists(norm_path):
         state_norm = TorchRunningMeanStd(shape=(gat_out,), device=DEVICE)
@@ -884,7 +884,7 @@ def validate():
     else:
         state_norm = None
 
-    # 创建 Agent
+    # Create Agent
     dummy_inst = val_instances[0]
     agent = HierarchicalPPOAgent(dummy_inst, gat, upper, lower, critic_u, critic_l, state_norm=state_norm,
                                  gamma=GAMMA, lam=LAM, clip=CLIP_EPSILON)
@@ -892,39 +892,39 @@ def validate():
     if not agent.load(model_path):
         return
 
-    # 创建配置对象（用于环境）
+    # Create configuration object (for environment)
     class DummyConfig:
         reward_scaling = REWARD_SCALING
         reward_clip = REWARD_CLIP
         use_disjunctive_edges = False
     cfg = DummyConfig()
 
-    # 运行验证
+    # Run validation
     rewards_norm = []
     kls_avg = []
     losses_avg = []
     for idx, inst in enumerate(val_instances):
-        print(f"\n验证实例 {idx+1}/{len(val_instances)}: {inst.file_name}")
+        print(f"\nValidating instance {idx+1}/{len(val_instances)}: {inst.file_name}")
         env = HeteroGraphEnv(inst, max_jobs, max_total_ops, max_machines, max_proc_time, max_due_date, cfg)
         agent.inst = inst
-        # 使用 deterministic=False 以获得概率分布
+        # Use deterministic=False to obtain probability distributions
         R, KL, L = run_episode(agent, env, deterministic=False)
         rewards_norm.append(R)
         kls_avg.append(KL)
         losses_avg.append(L)
         print(f"  R_norm={R:.4f}, KL_avg={KL:.4f}, L_avg={L:.4f}")
 
-    # 计算平均值
+    # Compute averages
     avg_R = np.mean(rewards_norm)
     avg_KL = np.mean(kls_avg)
     avg_L = np.mean(losses_avg)
 
     print("\n" + "=" * 50)
-    print("验证结果（收敛值）")
+    print("Validation Results (Converged Values)")
     print("=" * 50)
-    print(f"归一化累积奖励 R     : {avg_R:.4f}")
-    print(f"平均 KL 散度（上层+下层）: {avg_KL:.4f}")
-    print(f"平均总损失 L(θ)      : {avg_L:.4f}")
+    print(f"Normalized cumulative reward R     : {avg_R:.4f}")
+    print(f"Average KL divergence (higer+lower): {avg_KL:.4f}")
+    print(f"Average total loss L(θ)            : {avg_L:.4f}")
     print("=" * 50)
 
 if __name__ == "__main__":

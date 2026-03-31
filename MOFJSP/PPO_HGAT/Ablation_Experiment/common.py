@@ -1,6 +1,6 @@
 """
-PPO+HGAT 消融实验公共模块
-包含所有共享的类、函数、配置。
+PPO+HGAT Ablation Study Common Module
+Contains all shared classes, functions, and configurations.
 """
 
 import torch
@@ -20,7 +20,7 @@ from collections import deque
 import re
 import shutil
 
-# 全局配置
+# Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-6
 W1, W2, W3 = 0.4, 0.3, 0.3
@@ -31,26 +31,26 @@ torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
-# 训练实例目录（位于项目根目录下）
+# Training instance directory (under project root)
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))  # MOFJSP 目录
+PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))  # MOFJSP directory
 TRAIN_INSTANCE_DIR = os.path.join(PROJECT_ROOT, "mo_fjsp_instances")
 TRAIN_PATTERN = "mo_fjsp_*_train.txt"
 
-# 对比数据集目录
+# Comparison dataset directory
 COMPARISON_DIR = os.path.join(PROJECT_ROOT, "comparison_instances")
 
-# 模型保存基础路径
+# Base model save path
 BASE_MODEL_DIR = os.path.join(CURRENT_DIR, "model")
 os.makedirs(BASE_MODEL_DIR, exist_ok=True)
 
-# A5 完整模型路径（预训练好的）
+# A5 full model path (pre-trained)
 A5_MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "ppo_hgat", "ppo_hgat_best.pth")
 
-# 实验定义
+# Experiment definitions
 EXPERIMENTS = [
     {
-        'name': 'A1 (同构+带边特征+分层PPO)',
+        'name': 'A1 (Homogeneous+Edge Feature+Hierarchical PPO)',
         'use_hgat': False,
         'use_homogeneous': True,
         'use_edge_feat': True,
@@ -59,7 +59,7 @@ EXPERIMENTS = [
         'model_dir': os.path.join(BASE_MODEL_DIR, 'A1')
     },
     {
-        'name': 'A2 (异构+无边特征+分层PPO)',
+        'name': 'A2 (Heterogeneous+No Edge Feature+Hierarchical PPO)',
         'use_hgat': True,
         'use_homogeneous': False,
         'use_edge_feat': False,
@@ -68,7 +68,7 @@ EXPERIMENTS = [
         'model_dir': os.path.join(BASE_MODEL_DIR, 'A2')
     },
     {
-        'name': 'A3 (异构+带边特征+MLP+分层PPO)',
+        'name': 'A3 (Heterogeneous+Edge Feature+MLP+Hierarchical PPO)',
         'use_hgat': False,
         'use_homogeneous': False,
         'use_edge_feat': True,
@@ -77,7 +77,7 @@ EXPERIMENTS = [
         'model_dir': os.path.join(BASE_MODEL_DIR, 'A3')
     },
     {
-        'name': 'A4 (异构+带边特征+GAT+联合PPO)',
+        'name': 'A4 (Heterogeneous+Edge Feature+GAT+Joint PPO)',
         'use_hgat': True,
         'use_homogeneous': False,
         'use_edge_feat': True,
@@ -86,24 +86,24 @@ EXPERIMENTS = [
         'model_dir': os.path.join(BASE_MODEL_DIR, 'A4')
     },
     {
-        'name': 'A5 (异构+带边特征+GAT+分层PPO) 完整模型',
+        'name': 'A5 (Heterogeneous+Edge Feature+GAT+Hierarchical PPO) Full Model',
         'use_hgat': True,
         'use_homogeneous': False,
         'use_edge_feat': True,
         'use_mlp_encoder': False,
         'use_hierarchical': True,
         'model_dir': os.path.join(BASE_MODEL_DIR, 'A5'),
-        'pretrained_path': A5_MODEL_PATH   # 预训练模型路径，用于直接加载
+        'pretrained_path': A5_MODEL_PATH   # Pre-trained model path, for direct loading
     }
 ]
 
 torch.backends.cudnn.benchmark = True
 
 
-# 配置类
+# Configuration class
 class Config:
     n_episodes = 10000
-    lr = 5e-4                      # 降低学习率，防止梯度爆炸
+    lr = 5e-4                      # Reduce learning rate to prevent gradient explosion
     lr_decay = 0.5
     lr_decay_steps = 2000
     min_lr = 1e-5
@@ -131,7 +131,7 @@ class Config:
     num_envs = 10
     amp_enabled = True
 
-    # 课程学习参数（默认启用）
+    # Curriculum learning parameters (enabled by default)
     curriculum_enabled = True
     curriculum_stages = [
         (0.0, 0.3, ['small']),
@@ -142,24 +142,24 @@ class Config:
 cfg = Config()
 
 
-# 检查训练数据
+# Check training data
 def check_training_data():
-    """检查训练数据是否存在，若不存在则给出错误提示"""
+    """Check if training data exists; if not, raise an error."""
     if not os.path.exists(TRAIN_INSTANCE_DIR):
         raise FileNotFoundError(
-            f"训练实例目录不存在: {TRAIN_INSTANCE_DIR}\n"
-            f"请先运行项目根目录下的 Generate_DataSet.py 生成训练数据。"
+            f"Training instance directory does not exist: {TRAIN_INSTANCE_DIR}\n"
+            f"Please run Generate_DataSet.py in the project root to generate training data."
         )
     files = glob.glob(os.path.join(TRAIN_INSTANCE_DIR, TRAIN_PATTERN))
     if not files:
         raise FileNotFoundError(
-            f"在目录 {TRAIN_INSTANCE_DIR} 中未找到匹配 {TRAIN_PATTERN} 的文件。\n"
-            f"请先运行项目根目录下的 Generate_DataSet.py 生成训练数据。"
+            f"No files matching {TRAIN_PATTERN} found in directory {TRAIN_INSTANCE_DIR}.\n"
+            f"Please run Generate_DataSet.py in the project root to generate training data."
         )
-    print(f"找到 {len(files)} 个训练实例文件，继续训练。")
+    print(f"Found {len(files)} training instance files, continuing training.")
 
 
-# 数据读取与实例定义
+# Data reading and instance definition
 @dataclass
 class Operation:
     job_id: int
@@ -179,7 +179,7 @@ def read_fjsp_instance(file_path: str):
         sys.exit(1)
 
     if len(lines) < 3:
-        raise ValueError(f"实例文件 {file_path} 数据行不足")
+        raise ValueError(f"Instance file {file_path} has insufficient data lines")
 
     num_jobs, num_machines = map(int, lines[0].split())
     job_lines = lines[1:1 + num_jobs]
@@ -189,9 +189,9 @@ def read_fjsp_instance(file_path: str):
     machine_capabilities = list(map(int, capabilities_line.split()))
 
     if len(due_dates) != num_jobs:
-        print(f"警告：交货期数量 ({len(due_dates)}) 与作业数 ({num_jobs}) 不匹配")
+        print(f"Warning: number of due dates ({len(due_dates)}) does not match number of jobs ({num_jobs})")
     if len(machine_capabilities) != num_machines:
-        print(f"警告：机器能力数量 ({len(machine_capabilities)}) 与机器数 ({num_machines}) 不匹配")
+        print(f"Warning: number of machine capabilities ({len(machine_capabilities)}) does not match number of machines ({num_machines})")
 
     jobs = []
     for job_idx, line in enumerate(job_lines):
@@ -218,7 +218,7 @@ def read_fjsp_instance(file_path: str):
 def load_all_instances(instance_dir: str, pattern: str):
     file_paths = glob.glob(os.path.join(instance_dir, pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
 
     instance_list = []
     max_jobs = 0
@@ -276,7 +276,7 @@ class MOFJSPInstance:
         self.mean_proc_time = np.mean(all_times) if all_times else 1.0
         self.avg_flex = total_assignments / (self.total_ops * self.n_machines) if self.total_ops > 0 else 0.0
 
-        # 建立索引映射
+        # Build index mappings
         self.op_index_map = {}
         op_idx = 0
         for job in range(self.n_jobs):
@@ -320,7 +320,7 @@ class MOFJSPInstance:
         else:
             self.capability_tensor = self.capability_tensor * 0.0
 
-        # 预计算边
+        # Precompute edges
         seq_src, seq_dst = [], []
         for job in range(self.n_jobs):
             for op in range(self.ops_per_job[job] - 1):
@@ -356,7 +356,7 @@ class MOFJSPInstance:
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
 
-# 课程学习采样器
+# Curriculum learning sampler
 class CurriculumSampler:
     def __init__(self, instances: List[MOFJSPInstance], cfg: Config):
         self.instances = instances
@@ -386,7 +386,7 @@ class CurriculumSampler:
         return random.choice(allowed_instances)
 
 
-# ---------------------------- 状态归一化 ----------------------------
+# ---------------------------- State normalization ----------------------------
 class TorchRunningMeanStd:
     def __init__(self, shape=(), epsilon=1e-4, device=DEVICE):
         self.mean = torch.zeros(shape, dtype=torch.float32, device=device)
@@ -418,7 +418,7 @@ class TorchRunningMeanStd:
         return (x - self.mean) / (self.var.sqrt() + 1e-8)
 
 
-# ---------------------------- 异质图环境 ----------------------------
+# ---------------------------- Heterogeneous graph environment ----------------------------
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
                  global_max_proc_time, global_max_due_date, cfg):
@@ -458,7 +458,7 @@ class HeteroGraphEnv:
 
         self.machine_ops_list = instance.machine_ops_list
 
-        # 静态工序特征
+        # Static operation features
         self.static_op_feats = torch.zeros((self.global_max_ops, self.op_feat_dim), dtype=torch.float32, device=DEVICE)
         for job in range(instance.n_jobs):
             for op in range(instance.ops_per_job[job]):
@@ -468,7 +468,7 @@ class HeteroGraphEnv:
                 job_id_norm = job / max(1, global_max_jobs - 1)
                 self.static_op_feats[node_idx, :] = torch.tensor([step_idx, due_time, job_id_norm], device=DEVICE)
 
-        # 静态机器特征
+        # Static machine features
         self.static_mac_feats = torch.zeros((self.global_max_machines, self.mac_feat_dim), dtype=torch.float32, device=DEVICE)
         for m in range(instance.n_machines):
             self.static_mac_feats[m, 2] = instance.capability_tensor[m]
@@ -515,7 +515,7 @@ class HeteroGraphEnv:
         self.op_finish_time[op_idx] = end
         self.op_scheduled[op_idx] = True
 
-        # 即时奖励
+        # Immediate reward
         old_LB = torch.std(self.machine_load)
         temp_load = self.machine_load.clone()
         temp_load[machine.long()] += p_time
@@ -587,7 +587,7 @@ class HeteroGraphEnv:
             'mac_op': alloc_rev_feat_final
         }
 
-        # 构建 op_mask 时过滤掉无效索引
+        # Build op_mask, filtering out invalid indices
         op_mask = torch.zeros(self.global_max_ops, dtype=torch.float32, device=DEVICE)
         job_ids = torch.arange(self.inst.n_jobs, device=DEVICE)
         next_op = self.job_next_op
@@ -595,11 +595,11 @@ class HeteroGraphEnv:
         valid_jobs = job_ids[next_op < max_ops_per_job]
         if len(valid_jobs) > 0:
             indices = self.job_op_to_idx[valid_jobs, next_op[valid_jobs]]
-            # 过滤掉可能的 -1（虽然理论上不应出现，但为安全）
+            # Filter out possible -1 (should not occur theoretically, but for safety)
             valid_mask = indices >= 0
             if valid_mask.any():
                 avail_op_indices = indices[valid_mask]
-                # 确保索引不超过实际工序总数（调试用）
+                # Ensure indices do not exceed the actual number of operations (for debugging)
                 assert (avail_op_indices < self.inst.total_ops).all(), \
                     f"avail_op_indices contains out-of-range index: {avail_op_indices[avail_op_indices >= self.inst.total_ops]}"
                 op_mask[avail_op_indices] = 1.0
@@ -613,7 +613,7 @@ class HeteroGraphEnv:
         }
 
 
-# 批处理环境管理器
+# Batch environment manager
 class BatchEnv:
     def __init__(self, envs: List['HeteroGraphEnv']):
         self.envs = envs
@@ -634,7 +634,7 @@ class BatchEnv:
         return next_states, rewards, dones
 
 
-# ---------------------------- 正交初始化 ----------------------------
+# ---------------------------- Orthogonal initialization ----------------------------
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain=gain)
@@ -643,9 +643,9 @@ def orthogonal_init(layer, gain=1.0):
     return layer
 
 
-# 网络模块
+# Network modules
 
-# 异质GAT层（支持边特征开关和可选 LayerNorm）
+# Heterogeneous GAT layer (supports edge feature switch and optional LayerNorm)
 class HeteroGATLayer(nn.Module):
     def __init__(self, in_dim_op, in_dim_mac, out_dim, num_heads=4, use_edge_feat=True, use_layer_norm=True):
         super().__init__()
@@ -711,7 +711,7 @@ class HeteroGATLayer(nn.Module):
             att_param = att_param.to(dtype_out)
             scores = (concat * att_param).sum(dim=-1)
             scores = self.leaky(scores)
-            # 数值稳定：裁剪分数，防止 exp 爆炸
+            # Numerical stability: clip scores to prevent exp explosion
             scores = torch.clamp(scores, min=-20, max=20)
             alpha = torch.exp(scores).to(dtype_out)
 
@@ -720,7 +720,7 @@ class HeteroGATLayer(nn.Module):
             denom = denom[dst_idx] + torch.tensor(EPS, dtype=dtype_out, device=device)
             norm_alpha = alpha / denom
             weighted = h_s * norm_alpha.unsqueeze(-1)
-            weighted = weighted.to(dtype_out)  # 确保类型与 out_buffer 一致
+            weighted = weighted.to(dtype_out)  # Ensure type matches out_buffer
             out_buffer.index_add_(0, dst_idx, weighted)
 
         if edges['seq'][0].numel() > 0:
@@ -733,7 +733,7 @@ class HeteroGATLayer(nn.Module):
         res_op = (out_op.flatten(1) + self.W_op(h_op))
         res_mac = (out_mac.flatten(1) + self.W_mac(h_mac))
 
-        # 应用可选的层归一化
+        # Apply optional layer normalization
         res_op = self.ln_op(res_op)
         res_mac = self.ln_mac(res_mac)
 
@@ -760,7 +760,7 @@ class HeteroGAT(nn.Module):
         return h_op2, h_mac2
 
 
-# 同质GAT（支持可选 LayerNorm）
+# Homogeneous GAT (supports optional LayerNorm)
 class HomogeneousGATLayer(nn.Module):
     def __init__(self, in_dim, out_dim, num_heads=4, use_edge_feat=True, use_layer_norm=True):
         super().__init__()
@@ -822,7 +822,7 @@ class HomogeneousGATLayer(nn.Module):
         out.index_add_(0, dst, weighted)
 
         out = out.flatten(1)
-        out = out + self.W(h)  # 残差
+        out = out + self.W(h)  # Residual
         out = self.ln(out)
         return F.elu(out)
 
@@ -843,7 +843,7 @@ class HomogeneousGAT(nn.Module):
         return h
 
 
-# MLP编码器
+# MLP encoder
 class MLPEncoder(nn.Module):
     def __init__(self, dim_op, dim_mac, hidden_dim, out_dim):
         super().__init__()
@@ -867,7 +867,7 @@ class MLPEncoder(nn.Module):
         return h_op, h_mac
 
 
-# 分层策略
+# Hierarchical policies
 class UpperPolicy(nn.Module):
     def __init__(self, emb_dim, hidden_dim):
         super().__init__()
@@ -965,7 +965,7 @@ class LowerPolicy(nn.Module):
         return probs
 
 
-# 联合策略（扁平PPO）
+# Joint policy (flat PPO)
 class JointPolicy(nn.Module):
     def __init__(self, emb_dim, hidden_dim, n_op_global, n_mac_global):
         super().__init__()
@@ -979,7 +979,7 @@ class JointPolicy(nn.Module):
         self.chunk_size = 50
 
     def forward(self, g_emb, h_op, h_mac, op_mask, mac_mask_per_op):
-        # 强制转换为 float32，避免 AMP 带来的半精度问题
+        # Force conversion to float32 to avoid half-precision issues from AMP
         g_emb = g_emb.float()
         h_op = h_op.float()
         h_mac = h_mac.float()
@@ -998,7 +998,7 @@ class JointPolicy(nn.Module):
         n_mac = h_mac.shape[1]
         n_op_global = h_op.shape[1]
 
-        # 断言输入的维度与初始化一致
+        # Assert input dimensions match initialization
         assert n_op_global == self.n_op_global, f"Expected n_op_global={self.n_op_global}, got {n_op_global}"
         assert n_mac == self.n_mac_global, f"Expected n_mac_global={self.n_mac_global}, got {n_mac}"
 
@@ -1007,11 +1007,11 @@ class JointPolicy(nn.Module):
         for b in range(batch_size):
             eligible_op_indices = torch.nonzero(op_mask[b] > 0).squeeze(1)
             if eligible_op_indices.numel() == 0:
-                # ========== 修改点 1：无可用工序时抛出详细异常 ==========
-                error_msg = (f"JointPolicy: 第 {b} 个状态的 op_mask 全零，无法采样。\n"
+                # ========== Modification point 1: throw detailed exception when no eligible operation ==========
+                error_msg = (f"JointPolicy: op_mask for state {b} is all zeros, cannot sample.\n"
                              f"op_mask: {op_mask[b].cpu().numpy()}\n"
-                             f"当前实例信息: 总工序数={h_op.shape[1]}, 机器数={n_mac}\n"
-                             f"可能原因：状态已完成但环境未正确重置，或 op_mask 构建错误。")
+                             f"Current instance info: total ops={h_op.shape[1]}, machines={n_mac}\n"
+                             f"Possible cause: state has finished but environment not properly reset, or op_mask construction error.")
                 raise RuntimeError(error_msg)
 
             num_eligible = eligible_op_indices.shape[0]
@@ -1043,15 +1043,15 @@ class JointPolicy(nn.Module):
             flat_indices = (op_global * n_mac + mac_global).reshape(-1)
             full_logits[b, flat_indices] = logits_eligible.reshape(-1)
 
-        # 对于每个batch，若所有logits均为 -inf（理论上不会发生，因为已处理空mask），则抛出异常
+        # For each batch, if all logits are -inf (should not happen because empty mask handled), throw exception
         for b in range(batch_size):
             if (full_logits[b] == -float('inf')).all():
-                error_msg = (f"JointPolicy: 第 {b} 个状态所有logits为 -inf，无法采样。\n"
+                error_msg = (f"JointPolicy: all logits for state {b} are -inf, cannot sample.\n"
                              f"op_mask: {op_mask[b].cpu().numpy()}\n"
-                             f"可能原因：所有可用的工序-机器组合均被 mask 屏蔽。")
+                             f"Possible cause: all operation-machine combinations are masked.")
                 raise RuntimeError(error_msg)
 
-        # 移除 clamp，改用减去最大值以稳定 softmax
+        # Remove clamp, use subtracting max for stable softmax
         full_logits = full_logits - full_logits.max(dim=-1, keepdim=True)[0]
         probs_flat = F.softmax(full_logits, dim=-1)
 
@@ -1072,7 +1072,7 @@ class Critic(nn.Module):
         return self.net(g_emb)
 
 
-# 批处理状态打包
+# Batch state packing
 def batch_states(states: List[Dict], n_op: int, n_mac: int):
     batch_size = len(states)
     op_feats_list = [s['op_feats'] for s in states]
@@ -1183,7 +1183,7 @@ class PPOAgent:
         self.value_clip = cfg.value_clip
         self.max_grad_norm = cfg.max_grad_norm
 
-        # 参数列表
+        # Parameter list
         self.params = list(encoder.parameters())
         if self.use_hierarchical:
             self.params += list(upper.parameters()) + list(lower.parameters()) + list(critic_u.parameters()) + list(critic_l.parameters())
@@ -1226,7 +1226,7 @@ class PPOAgent:
             'episode_counter': self.episode_counter,
             'scaler': self.scaler.state_dict() if self.scaler else None
         }, path)
-        print(f"模型已保存至 {path}")
+        print(f"Model saved to {path}")
 
     def load(self, path):
         if os.path.exists(path):
@@ -1234,29 +1234,29 @@ class PPOAgent:
                 warnings.simplefilter("ignore")
                 checkpoint = torch.load(path, map_location=DEVICE)
 
-            # 辅助函数：尝试从 checkpoint 中提取指定模块的 state_dict
+            # Helper function: attempt to extract state_dict of a specific module from checkpoint
             def _extract_state_dict(possible_keys):
                 if isinstance(checkpoint, dict):
                     for key in possible_keys:
                         if key in checkpoint:
                             return checkpoint[key]
-                # 如果 checkpoint 本身就是 state_dict（例如直接保存的模型参数）
+                # If the checkpoint itself is a state_dict (e.g., directly saved model parameters)
                 if all(isinstance(v, torch.Tensor) for v in checkpoint.values()):
                     return checkpoint
                 return None
 
-            # 加载 encoder
+            # Load encoder
             encoder_keys = ['encoder', 'gat', 'model', 'state_dict']
             encoder_sd = _extract_state_dict(encoder_keys)
             if encoder_sd is None:
-                # 如果还是没找到，尝试直接用整个 checkpoint（可能是单个 state_dict）
+                # If still not found, try using the whole checkpoint (may be a single state_dict)
                 if all(isinstance(v, torch.Tensor) for v in checkpoint.values()):
                     encoder_sd = checkpoint
                 else:
-                    raise KeyError(f"无法从 checkpoint 中找到 encoder state_dict，可用键: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'not a dict'}")
+                    raise KeyError(f"Cannot find encoder state_dict from checkpoint, available keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'not a dict'}")
             self.encoder.load_state_dict(encoder_sd)
 
-            # 加载其他模块（如果存在）
+            # Load other modules (if present)
             if self.use_hierarchical:
                 if 'upper' in checkpoint:
                     self.upper.load_state_dict(checkpoint['upper'])
@@ -1279,7 +1279,7 @@ class PPOAgent:
                 self.joint_policy = self.joint_policy.to(DEVICE).float()
             self.critic_u = self.critic_u.to(DEVICE).float()
 
-            # 重新创建优化器
+            # Recreate optimizer
             self.params = list(self.encoder.parameters())
             if self.use_hierarchical:
                 self.params += list(self.upper.parameters()) + list(self.lower.parameters()) + list(self.critic_u.parameters()) + list(self.critic_l.parameters())
@@ -1292,14 +1292,14 @@ class PPOAgent:
             self.entropy_coef = checkpoint.get('entropy_coef', self.entropy_coef)
             self.episode_counter = checkpoint.get('episode_counter', 0)
 
-            # 加载 scaler 状态时检查非空
+            # Load scaler state if not None
             if self.scaler is not None and 'scaler' in checkpoint and checkpoint['scaler'] is not None:
                 self.scaler.load_state_dict(checkpoint['scaler'])
 
-            print(f"模型已从 {path} 加载，beta={self.beta:.4f}, entropy_coef={self.entropy_coef:.4f}")
+            print(f"Model loaded from {path}, beta={self.beta:.4f}, entropy_coef={self.entropy_coef:.4f}")
             return True
         else:
-            print(f"未找到模型文件 {path}，从头开始训练。")
+            print(f"Model file {path} not found, starting training from scratch.")
             return False
 
     def get_action_batch(self, states: List[Dict], insts: List[MOFJSPInstance], deterministic=False):
@@ -1309,7 +1309,7 @@ class PPOAgent:
 
         batch_state_dict, state_slices, batch_op_mask = batch_states(states, n_op_global, n_mac_global)
 
-        # 强制所有特征为 float32
+        # Force all features to float32
         batch_state_dict['op_feats'] = batch_state_dict['op_feats'].float()
         batch_state_dict['mac_feats'] = batch_state_dict['mac_feats'].float()
         for k in batch_state_dict['edge_feats']:
@@ -1352,7 +1352,7 @@ class PPOAgent:
             else:
                 h_op_all, h_mac_all = self.encoder(batch_state_dict)
 
-            # 检查 NaN
+            # Check for NaN
             if torch.isnan(h_op_all).any() or torch.isnan(h_mac_all).any():
                 raise ValueError("Encoder output contains NaN")
 
@@ -1434,17 +1434,17 @@ class PPOAgent:
                 if torch.isnan(probs_flat).any():
                     raise ValueError("probs_flat contains NaN")
 
-                # 安全检查：确保 probs_flat 的形状符合预期
+                # Safety check: ensure probs_flat shape matches expectation
                 expected_num_actions = n_op_global * n_mac_global
                 if probs_flat.shape[1] != expected_num_actions:
-                    print(f"警告: probs_flat shape {probs_flat.shape} 与预期 {expected_num_actions} 不符，使用实际形状计算")
-                    # 重新计算 n_op_global 和 n_mac_global（取整）
+                    print(f"Warning: probs_flat shape {probs_flat.shape} does not match expected {expected_num_actions}, using actual shape for computation")
+                    # Recompute n_op_global and n_mac_global (round)
                     actual_num_actions = probs_flat.shape[1]
                     if actual_num_actions % n_mac_global != 0:
-                        raise ValueError(f"probs_flat 的列数 {actual_num_actions} 不能被 n_mac_global {n_mac_global} 整除")
+                        raise ValueError(f"probs_flat columns {actual_num_actions} not divisible by n_mac_global {n_mac_global}")
                     n_op_global = actual_num_actions // n_mac_global
 
-                # 采样后严格验证动作有效性
+                # After sampling, strictly validate action validity
                 max_attempts = 5
                 for attempt in range(max_attempts):
                     if deterministic:
@@ -1456,7 +1456,7 @@ class PPOAgent:
                     op_indices = flat_indices // n_mac_global
                     mac_indices = flat_indices % n_mac_global
 
-                    # 有效性检查
+                    # Validity check
                     valid = torch.ones(batch_size, dtype=torch.bool, device=DEVICE)
                     for i in range(batch_size):
                         inst_i = insts[i]
@@ -1468,30 +1468,30 @@ class PPOAgent:
                         valid[i] = op_ok and mac_ok and mask_ok
 
                     if valid.all():
-                        break  # 所有动作均有效，退出重试循环
+                        break  # All actions valid, exit retry loop
                     else:
-                        # 记录无效动作的详细信息
+                        # Log details of invalid actions
                         for i in range(batch_size):
                             if not valid[i]:
-                                print(f"无效动作: 环境 {i}, 实例 {insts[i].file_name}, "
+                                print(f"Invalid action: env {i}, instance {insts[i].file_name}, "
                                       f"op_idx={op_indices[i]}, mac_idx={mac_indices[i]}, "
                                       f"op_ok={op_indices[i] < insts[i].total_ops}, "
                                       f"mac_ok={mac_indices[i] < insts[i].n_machines}, "
                                       f"mask_ok={mask_ok if op_ok and mac_ok else False}")
-                                # 打印当前 op_mask 和 mac_mask_per_op 用于调试
+                                # Print current op_mask and mac_mask_per_op for debugging
                                 print(f"op_mask[{i}]: {states[i]['op_mask'].cpu().numpy()}")
                                 print(f"mac_mask_per_op[{i}, {op_indices[i]}]: {mac_mask_per_op[i, op_indices[i]].cpu().numpy()}")
 
                         if attempt == max_attempts - 1:
-                            # 最后一次尝试仍然无效，抛出异常
-                            error_msg = f"在 {max_attempts} 次尝试后仍无法采样到有效动作，请检查状态表示。"
+                            # Still invalid on last attempt, throw exception
+                            error_msg = f"Cannot sample a valid action after {max_attempts} attempts, please check state representation."
                             raise RuntimeError(error_msg)
 
-                        # 将无效动作对应的概率置零，重新归一化
+                        # Zero out probabilities for invalid actions and renormalize
                         for i in range(batch_size):
                             if not valid[i]:
                                 probs_flat[i, flat_indices[i]] = 0.0
-                        # 重新归一化
+                        # Renormalize
                         row_sums = probs_flat.sum(dim=1, keepdim=True)
                         probs_flat = torch.where(row_sums > 0, probs_flat / row_sums, torch.ones_like(probs_flat) / probs_flat.shape[1])
 
@@ -1527,11 +1527,11 @@ class PPOAgent:
 
         chunk_size = 16
 
-        # 优势计算
+        # Advantage calculation
         with torch.no_grad():
             batch_state_dict, state_slices, _ = batch_states(states, n_op_global, n_mac_global)
 
-            # 强制所有特征为 float32
+            # Force all features to float32
             batch_state_dict['op_feats'] = batch_state_dict['op_feats'].float()
             batch_state_dict['mac_feats'] = batch_state_dict['mac_feats'].float()
             for k in batch_state_dict['edge_feats']:
@@ -1633,7 +1633,7 @@ class PPOAgent:
 
             chunk_batch_state_dict, chunk_state_slices, _ = batch_states(chunk_states, n_op_global, n_mac_global)
 
-            # 强制所有特征为 float32
+            # Force all features to float32
             chunk_batch_state_dict['op_feats'] = chunk_batch_state_dict['op_feats'].float()
             chunk_batch_state_dict['mac_feats'] = chunk_batch_state_dict['mac_feats'].float()
             for k in chunk_batch_state_dict['edge_feats']:
@@ -1787,14 +1787,14 @@ class PPOAgent:
                     else:
                         value_loss = F.mse_loss(v_pred, chunk_returns_f32)
                 except Exception as e:
-                    print(f"计算 value_loss 时出错: {e}，跳过此块。")
+                    print(f"Error computing value_loss: {e}, skipping this chunk.")
                     del h_op_all, h_mac_all, g_embs_chunk, batch_h_op, batch_h_mac, batch_op_masks
                     if DEVICE.type == 'cuda':
                         torch.cuda.empty_cache()
                     continue
 
                 if 'value_loss' not in locals():
-                    print("value_loss 未定义，跳过此块。")
+                    print("value_loss not defined, skipping this chunk.")
                     del h_op_all, h_mac_all, g_embs_chunk, batch_h_op, batch_h_mac, batch_op_masks
                     if DEVICE.type == 'cuda':
                         torch.cuda.empty_cache()
@@ -1812,14 +1812,14 @@ class PPOAgent:
                 total_loss = policy_loss + self.value_coef * value_loss + self.beta * kl - self.entropy_coef * entropy
 
                 if torch.abs(total_loss) > 1e8:
-                    print(f"总损失过大 ({total_loss.item():.2e})，跳过此块。")
+                    print(f"Total loss too large ({total_loss.item():.2e}), skipping this chunk.")
                     del h_op_all, h_mac_all, g_embs_chunk, batch_h_op, batch_h_mac, batch_op_masks
                     if DEVICE.type == 'cuda':
                         torch.cuda.empty_cache()
                     continue
 
                 if torch.isnan(total_loss) or torch.isinf(total_loss):
-                    print(f"警告：损失为 NaN/Inf 在块 {chunk_start}-{chunk_end}，跳过此块。")
+                    print(f"Warning: Loss is NaN/Inf in chunk {chunk_start}-{chunk_end}, skipping this chunk.")
                     del h_op_all, h_mac_all, g_embs_chunk, batch_h_op, batch_h_mac, batch_op_masks
                     if DEVICE.type == 'cuda':
                         torch.cuda.empty_cache()
@@ -1831,7 +1831,7 @@ class PPOAgent:
                 self.scaler.unscale_(self.opt)
                 grad_norm = torch.nn.utils.clip_grad_norm_(self.params, self.max_grad_norm)
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
-                    print(f"警告：梯度范数为 NaN/Inf，跳过此块更新。")
+                    print(f"Warning: Gradient norm is NaN/Inf, skipping this chunk update.")
                     self.opt.zero_grad()
                 else:
                     self.scaler.step(self.opt)
@@ -1840,7 +1840,7 @@ class PPOAgent:
                 total_loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(self.params, self.max_grad_norm)
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
-                    print(f"警告：梯度范数为 NaN/Inf，跳过此块更新。")
+                    print(f"Warning: Gradient norm is NaN/Inf, skipping this chunk update.")
                     self.opt.zero_grad()
                 else:
                     self.opt.step()
@@ -1861,7 +1861,7 @@ class PPOAgent:
                 torch.cuda.empty_cache()
 
         if valid_chunks == 0:
-            print("警告：所有更新块均被跳过，无有效更新。")
+            print("Warning: All update chunks were skipped, no valid update performed.")
             return None
 
         avg_kl = total_kl / T
@@ -1898,10 +1898,10 @@ class PPOAgent:
         return stats
 
 
-# 训练函数（单个实验）
+# Training function (for a single experiment)
 def train_experiment(exp_config):
     print("=" * 50)
-    print(f"开始训练实验：{exp_config['name']}")
+    print(f"Starting training for experiment: {exp_config['name']}")
     print("=" * 50)
 
     try:
@@ -1914,19 +1914,19 @@ def train_experiment(exp_config):
         if exp_config.get('pretrained_path') and os.path.exists(exp_config['pretrained_path']):
             if not os.path.exists(model_path):
                 shutil.copy(exp_config['pretrained_path'], model_path)
-                print(f"A5 预训练模型已复制到 {model_path}，跳过训练。")
+                print(f"A5 pre-trained model copied to {model_path}, skipping training.")
             else:
-                print(f"A5 模型已存在，跳过训练。")
+                print(f"A5 model already exists, skipping training.")
             return
 
         if os.path.exists(model_path):
-            print(f"模型文件已存在：{model_path}，跳过训练。")
+            print(f"Model file already exists: {model_path}, skipping training.")
             return
 
         instance_tuples, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability = \
             load_all_instances(TRAIN_INSTANCE_DIR, TRAIN_PATTERN)
-        print(f"共加载 {len(instance_tuples)} 个训练实例")
-        print(f"全局最大作业数: {max_jobs}, 最大机器数: {max_machines}, 最大总工序数: {max_total_ops}, 最大加工时间: {max_proc_time}, 最大交货期: {max_due_date}, 最大机器能力: {max_capability}")
+        print(f"Loaded {len(instance_tuples)} training instances")
+        print(f"Global max jobs: {max_jobs}, max machines: {max_machines}, max total operations: {max_total_ops}, max processing time: {max_proc_time}, max due date: {max_due_date}, max machine capability: {max_capability}")
 
         instance_list = []
         for jobs, caps, dues, fname, size in instance_tuples:
@@ -1937,7 +1937,7 @@ def train_experiment(exp_config):
 
         global_max_ops = max(inst.total_ops for inst in instance_list)
         global_max_machines = max(inst.n_machines for inst in instance_list)
-        print(f"全局最大工序数: {global_max_ops}, 全局最大机器数: {global_max_machines}")
+        print(f"Global max operations: {global_max_ops}, global max machines: {global_max_machines}")
 
         dim_op, dim_mac = 3, 3
 
@@ -1978,15 +1978,15 @@ def train_experiment(exp_config):
 
         if os.path.exists(model_path):
             agent.load(model_path)
-            print(f"已加载现有模型，将在此基础上继续训练。")
+            print(f"Loaded existing model, continuing training.")
         else:
-            print(f"未找到现有模型，从头开始训练。")
+            print(f"No existing model found, starting training from scratch.")
 
-        # 根据实验类型调整并行环境数量
+        # Adjust number of parallel environments based on experiment type
         if exp_config['use_hierarchical']:
             num_envs = cfg.num_envs
         else:
-            num_envs = 1  # 联合策略单环境
+            num_envs = 1  # Single environment for joint policy
 
         envs = []
         env_insts = []
@@ -2025,7 +2025,7 @@ def train_experiment(exp_config):
                 actions, probs_list, indices_list = agent.get_action_batch(states, env_insts)
                 next_states, rewards, dones = batch_env.step(actions)
             except Exception as e:
-                print(f"训练步出现错误: {e}，重置所有环境并继续。")
+                print(f"Error during training step: {e}, resetting all environments and continuing.")
                 for j in range(num_envs):
                     new_inst = curriculum_sampler.sample()
                     envs[j] = HeteroGraphEnv(new_inst, max_jobs, global_max_ops, global_max_machines,
@@ -2060,7 +2060,7 @@ def train_experiment(exp_config):
                         try:
                             stats = agent.update(traj_buffers[i], env_insts[i])
                         except Exception as e:
-                            print(f"更新模型时出错: {e}，跳过此次更新。")
+                            print(f"Error during model update: {e}, skipping this update.")
                             stats = None
                         if stats is not None:
                             kl_episodes.append(stats['kl'].item())
@@ -2122,16 +2122,16 @@ def train_experiment(exp_config):
                 torch.cuda.empty_cache()
 
         pbar.close()
-        print(f"实验 {exp_config['name']} 训练完成。")
-        print(f"最佳归一化奖励: {best_norm_reward:.4f}")
+        print(f"Experiment {exp_config['name']} training completed.")
+        print(f"Best normalized reward: {best_norm_reward:.4f}")
 
     except Exception as e:
-        print(f"\n训练实验 {exp_config['name']} 时发生严重错误: {e}")
-        print("跳过此实验，继续下一个实验。")
+        print(f"\nSevere error during training experiment {exp_config['name']}: {e}")
+        print("Skipping this experiment and continuing with the next.")
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
-    # 此文件不直接运行，由 train.py 和 evaluate.py 导入
+    # This file is not meant to be run directly; it is imported by train.py and evaluate.py
     pass

@@ -1,6 +1,6 @@
 """
-DQN+MLP求解实现程序
-使用最传统的DQN版本非变种，结合多层感知机求解
+DQN+MLP Solution Implementation
+Uses the most traditional DQN version (no variants) combined with a multi-layer perceptron
 """
 
 import torch
@@ -22,10 +22,10 @@ import numba
 from numba import njit
 
 
-# 1. 配置参数
+# 1. Configuration parameters
 
 class Config:
-    # 训练参数
+    # Training parameters
     lr = 5e-5
     lr_decay = 0.999
     min_lr = 1e-6
@@ -74,12 +74,12 @@ class Config:
     num_envs = 32
     steps_per_update = 64
 
-    curriculum_enabled = True                     # 是否启用课程学习
-    # 课程阶段：每个阶段对应 [开始比例, 结束比例) 的episode范围，以及该阶段使用的规模列表
+    curriculum_enabled = True                     # Enable curriculum learning
+    # Curriculum stages: each stage corresponds to an episode range [start_ratio, end_ratio) and a list of allowed sizes
     curriculum_stages = [
-        (0.0, 0.3, ['small']),                    # 前30% episodes 只用 small
-        (0.3, 0.6, ['small', 'medium']),           # 中间30% 用 small + medium
-        (0.6, 1.0, ['small', 'medium', 'large'])   # 最后40% 用全部规模
+        (0.0, 0.3, ['small']),                    # First 30% episodes only use small
+        (0.3, 0.6, ['small', 'medium']),          # Next 30% use small + medium
+        (0.6, 1.0, ['small', 'medium', 'large'])   # Last 40% use all sizes
     ]
 
 def set_seed(seed=42):
@@ -90,7 +90,7 @@ def set_seed(seed=42):
         torch.cuda.manual_seed(seed)
 
 
-# 2. 文件读取模块
+# 2. File reading module
 
 @dataclass
 class InstanceData:
@@ -109,19 +109,19 @@ def parse_size_from_filename(filename: str) -> str:
     return match.group(1) if match else "unknown"
 
 def read_fjsp_instance_structured(file_path: str):
-    """读取实例并转换为结构化数组"""
+    """Read instance and convert to structured arrays"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
-        print(f"错误：文件 {file_path} 未找到！")
+        print(f"Error: File {file_path} not found!")
         exit(1)
     if len(lines) < 2:
-        raise ValueError("文件格式错误：行数不足")
+        raise ValueError("File format error: insufficient lines")
     num_jobs, num_machines = map(int, lines[0].split())
     job_lines = lines[1:1 + num_jobs]
     if len(job_lines) != num_jobs:
-        raise ValueError(f"文件格式错误：期望 {num_jobs} 个作业行，实际得到 {len(job_lines)} 行")
+        raise ValueError(f"File format error: expected {num_jobs} job lines, got {len(job_lines)}")
     due_date_line = lines[1 + num_jobs]
     due_dates = np.array(list(map(float, due_date_line.split())), dtype=np.float32)
 
@@ -187,7 +187,7 @@ def read_fjsp_instance_structured(file_path: str):
 def load_all_instances_structured(instance_dir: str, file_pattern: str = "mo_fjsp_*_train.txt"):
     file_paths = glob.glob(os.path.join(instance_dir, file_pattern))
     if not file_paths:
-        raise FileNotFoundError(f"在目录 {instance_dir} 中未找到匹配 {file_pattern} 的文件")
+        raise FileNotFoundError(f"No files matching {file_pattern} found in directory {instance_dir}")
     instance_list = []
     max_jobs = 0
     max_machines = 0
@@ -206,7 +206,7 @@ def load_all_instances_structured(instance_dir: str, file_pattern: str = "mo_fjs
 
 
 
-# 3. 实例包装类
+# 3. Instance wrapper class
 
 class JobShopInstance:
     def __init__(self, data: InstanceData, max_jobs, max_machines, file_name, size):
@@ -227,23 +227,23 @@ class JobShopInstance:
 
 
 
-# 4. 实例采样器
+# 4. Instance sampler
 
 class CurriculumSampler:
-    """根据课程阶段选择允许的规模，并在允许规模内均匀采样"""
+    """Selects allowed sizes according to curriculum stage and samples uniformly from them"""
     def __init__(self, instances: List[JobShopInstance], cfg: Config):
         self.instances = instances
         self.cfg = cfg
-        # 按规模分类
+        # Classify by size
         self.instances_by_size = {'small': [], 'medium': [], 'large': []}
         for inst in instances:
             self.instances_by_size[inst.size].append(inst)
-        # 当前允许的规模列表
-        self.allowed_sizes = ['small']   # 初始只允许small
+        # Currently allowed sizes
+        self.allowed_sizes = ['small']   # initially only small
         self.current_stage = 0
 
     def update_stage(self, episode_progress: float):
-        """根据当前episode比例更新允许的规模"""
+        """Update allowed sizes based on current episode ratio"""
         if not self.cfg.curriculum_enabled:
             self.allowed_sizes = ['small', 'medium', 'large']
             return
@@ -253,17 +253,17 @@ class CurriculumSampler:
                 break
 
     def sample(self) -> JobShopInstance:
-        # 从允许规模的所有实例中均匀采样
+        # Uniformly sample from all instances in allowed sizes
         allowed_instances = []
         for sz in self.allowed_sizes:
             allowed_instances.extend(self.instances_by_size[sz])
         if not allowed_instances:
-            # 保底：如果允许规模为空（可能配置错误），则从全部实例中采样
+            # Fallback: sample from all instances if allowed list is empty (possible misconfiguration)
             allowed_instances = self.instances
         return random.choice(allowed_instances)
 
 
-# 5. 状态归一化工具
+# 5. State normalization tool
 
 class RunningMeanStd:
     def __init__(self, shape=(), epsilon=1e-4, device='cpu'):
@@ -291,14 +291,14 @@ class RunningMeanStd:
         return (x - self.mean) / (torch.sqrt(self.var) + 1e-8)
 
 
-# 6. 环境类（增加奖励自适应缩放）
+# 6. Environment class (with reward adaptive scaling)
 
 @njit(cache=True)
 def build_state(machine_avail_time, machine_load, job_next_op_idx, job_avail_time,
                 num_jobs_actual, num_machines_actual, max_jobs, max_machines,
                 due_dates, job_op_ranges, op_machines, op_times,
                 max_proc_time, max_due_date, total_ops):
-    # ... 与之前完全相同 ...
+    # ... identical to before ...
     current_global_time = np.max(machine_avail_time[:num_machines_actual])
     max_load_est = max(np.max(machine_load[:num_machines_actual]), 100.0)
     feat_m_load = machine_load.copy()
@@ -401,8 +401,8 @@ class MOFJSP_Env:
                 proc_time = inst.op_times[global_op_idx, k]
                 break
         if proc_time is None:
-            # 非法动作处理
-            print(f"警告：非法动作 {action_idx} (j={j_id}, m={m_id})")
+            # Handle invalid action
+            print(f"Warning: invalid action {action_idx} (j={j_id}, m={m_id})")
             return self._get_state(), -1.0, False, {}
 
         start_time = max(self.job_avail_time[j_id], self.machine_avail_time[m_id])
@@ -419,12 +419,12 @@ class MOFJSP_Env:
         rem_ops = (inst.job_op_ranges[j_id, 1] - inst.job_op_ranges[j_id, 0]) - curr_op_idx
         u_ij = max(0, due_date - end_time) / (inst.max_due_date * rem_ops + 1e-5)
 
-        # 基础奖励
+        # Base reward
         reward = - (w[0] * (proc_time / inst.max_proc_time) +
                    w[1] * (self.machine_load[m_id] / L_max_est) +
                    w[2] * u_ij)
-        # 使用实例的总操作数作为缩放因子，使得不同规模实例的累计奖励范围相近
-        scale_factor = max(1.0, inst.total_ops / 50.0)   # 假设基准规模50道工序
+        # Scale by total number of operations to make cumulative reward range similar across different instance scales
+        scale_factor = max(1.0, inst.total_ops / 50.0)   # Assume baseline scale of 50 operations
         reward /= scale_factor
 
         reward /= self.cfg.reward_scaling
@@ -437,7 +437,7 @@ class MOFJSP_Env:
             lb = np.sqrt(np.mean((self.machine_load[:inst.num_machines] - avg_load) ** 2))
             t_tardy = sum(max(0, self.job_avail_time[j] - inst.due_dates[j]) for j in range(inst.num_jobs))
             global_penalty = (w[0] * c_max / 100.0 + w[1] * lb / 50.0 + w[2] * t_tardy / 50.0)
-            global_penalty /= scale_factor   # 同样缩放
+            global_penalty /= scale_factor   # same scaling
             global_penalty /= self.cfg.reward_scaling
             reward -= global_penalty
             reward = np.clip(reward, -self.cfg.reward_clip, self.cfg.reward_clip)
@@ -448,7 +448,7 @@ class MOFJSP_Env:
         return next_state, float(reward), done, info
 
 
-# 7. DQN 网络
+# 7. DQN Network
 
 def orthogonal_init(layer, gain=1.0):
     nn.init.orthogonal_(layer.weight, gain=gain)
@@ -474,7 +474,7 @@ class QNetwork(nn.Module):
         return self.net(state)
 
 
-# 8. GPU环形缓冲区
+# 8. GPU ring buffer
 
 class GPURingBuffer:
     def __init__(self, capacity, state_dim, action_dim, device):
@@ -561,12 +561,12 @@ class DQN_Agent:
                 pass
             self.epsilon = checkpoint.get('epsilon', self.epsilon)
             self.steps_done = checkpoint.get('steps_done', 0)
-            print(f"已加载模型: {self.model_path}, epsilon={self.epsilon:.4f}")
+            print(f"Loaded model: {self.model_path}, epsilon={self.epsilon:.4f}")
         else:
-            print("从头开始训练。")
+            print("Starting training from scratch.")
 
     def select_action_batch(self, states, masks, epsilon):
-        """states, masks 已在 GPU 上"""
+        """states, masks are already on GPU"""
         batch_size = states.shape[0]
         explore_mask = torch.rand(batch_size, device=self.cfg.device) < epsilon
         actions = torch.zeros(batch_size, dtype=torch.long, device=self.cfg.device)
@@ -592,7 +592,7 @@ class DQN_Agent:
         if (~explore_mask).any():
             actions[~explore_mask] = greedy_actions[~explore_mask]
 
-        # 最终合法性检查
+        # Final validity check
         actions_cpu = actions.cpu()
         masks_cpu = masks.cpu().numpy()
         for i in range(batch_size):
@@ -666,21 +666,21 @@ class DQN_Agent:
         return {'avg_q': avg_q, 'avg_loss': avg_loss, 'buffer_usage': buffer_usage, 'target_updates': target_updates}
 
 
-# 10. 环境管理器
+# 10. Environment manager
 
 class EnvManager:
     def __init__(self, cfg, instance_list, num_envs, agent, state_norm):
         self.cfg = cfg
         self.num_envs = num_envs
         self.envs = []
-        self.states = []          # 存储numpy
+        self.states = []          # store numpy arrays
         self.masks = []
         self.dones = [True] * num_envs
         self.episode_rewards = [0.0] * num_envs
         self.step_counts = [0] * num_envs
         self.total_ops_list = []
         self.instance_list = instance_list
-        # 使用课程学习采样器替代InstanceSampler
+        # Use curriculum sampler instead of InstanceSampler
         self.curriculum_sampler = CurriculumSampler(instance_list, cfg)
         self.agent = agent
         self.state_norm = state_norm
@@ -704,19 +704,19 @@ class EnvManager:
         self.total_ops_list.append(env.inst.total_ops)
 
     def step_all(self):
-        """为所有环境执行一步，返回经验列表"""
+        """Take a step for all environments, return a list of experiences"""
         states_np = np.stack(self.states)
         masks_np = np.stack(self.masks)
         states = torch.from_numpy(states_np).to(self.device)
         masks = torch.from_numpy(masks_np).to(self.device)
 
-        # ========== 在线更新状态归一化 ==========
+        # ========== Online state normalization update ==========
         if self.state_norm is not None:
-            self.state_norm.update(states)          # 使用当前批状态更新统计量
+            self.state_norm.update(states)          # Update statistics using the current batch
             states_norm = self.state_norm.normalize(states)
         else:
             states_norm = states
-        # ======================================
+        # ======================================================
 
         actions = self.agent.select_action_batch(states_norm, masks, self.agent.epsilon)
 
@@ -728,7 +728,7 @@ class EnvManager:
             try:
                 ns, r, d, info = self.envs[i].step(act)
             except Exception as e:
-                print(f"环境 {i} 步进异常: {e}, 动作={act}, 重置环境")
+                print(f"Environment {i} step error: {e}, action={act}, resetting environment")
                 ns = self.envs[i].reset()
                 r = 0.0
                 d = False
@@ -760,14 +760,14 @@ class EnvManager:
         return experiences
 
 
-# 11. 主训练函数
+# 11. Main training function
 
 def train():
     cfg = Config()
     set_seed()
 
-    # 加载实例
-    print("正在加载实例...")
+    # Load instances
+    print("Loading instances...")
     start_load = time.time()
     instance_tuples, max_jobs, max_machines, global_max_proc, global_max_due = \
         load_all_instances_structured(cfg.instance_dir)
@@ -780,18 +780,18 @@ def train():
     for data, fname, size in instance_tuples:
         inst = JobShopInstance(data, max_jobs, max_machines, fname, size)
         instance_list.append(inst)
-    print(f"实例加载完成，耗时 {time.time() - start_load:.2f}s")
+    print(f"Instance loading completed, time {time.time() - start_load:.2f}s")
 
     agent = DQN_Agent(cfg)
-    print(f"设备: {cfg.device}")
-    print(f"状态维度: {agent.state_dim}, 动作维度: {agent.action_dim}")
-    print(f"训练轮数: {cfg.epochs}")
-    print(f"并行环境数: {cfg.num_envs}")
+    print(f"Device: {cfg.device}")
+    print(f"State dimension: {agent.state_dim}, action dimension: {agent.action_dim}")
+    print(f"Number of epochs: {cfg.epochs}")
+    print(f"Number of parallel environments: {cfg.num_envs}")
 
-    # 状态归一化初始化（仅用少量样本初始化，后续在线更新）
+    # State normalization initialization (initialize with a few samples, then update online)
     if cfg.use_state_norm:
         state_norm = RunningMeanStd(shape=(agent.state_dim,), device=cfg.device)
-        print(f"\n预收集 {cfg.precollect_episodes} 个episode...")
+        print(f"\nPre-collecting {cfg.precollect_episodes} episodes...")
         start_pre = time.time()
         states_collected = []
         for _ in range(cfg.precollect_episodes):
@@ -814,7 +814,7 @@ def train():
         if states_collected:
             states_tensor = torch.from_numpy(np.stack(states_collected)).to(cfg.device)
             state_norm.update(states_tensor)
-        print(f"预收集完成，耗时 {time.time() - start_pre:.2f}s，共收集 {len(states_collected)} 个状态样本。\n")
+        print(f"Pre-collection completed, time {time.time() - start_pre:.2f}s, collected {len(states_collected)} state samples.\n")
     else:
         state_norm = None
 
@@ -829,7 +829,7 @@ def train():
 
     try:
         while episode_count < cfg.epochs:
-            # 更新课程阶段
+            # Update curriculum stage
             progress = episode_count / cfg.epochs
             env_manager.curriculum_sampler.update_stage(progress)
 
@@ -863,11 +863,11 @@ def train():
                     if info is not None and 'final_metrics' in info:
                         final_info = info
 
-            # 定期训练
+            # Periodically train
             if step_counter % cfg.steps_per_update == 0:
                 agent.update()
 
-            # 日志打印
+            # Logging
             current_interval = episode_count // cfg.log_interval
             if current_interval > last_log_interval:
                 last_log_interval = current_interval
@@ -880,7 +880,7 @@ def train():
                 if final_info and 'final_metrics' in final_info:
                     m = final_info['final_metrics']
                     metrics = f" | Cmax={m['Cmax']:.1f} LB={m['LB']:.2f} Tardy={m['Tardy']:.1f}"
-                # 打印当前允许的规模
+                # Print current allowed sizes
                 allowed_sizes = env_manager.curriculum_sampler.allowed_sizes
                 print(
                     f"Episode {display_episode:6d}/{cfg.epochs} | Sizes: {allowed_sizes} | NormReward: {reward_ema:8.4f} | "
@@ -888,12 +888,12 @@ def train():
                     f"Loss: {stats['avg_loss']:.4f} | Buffer: {stats['buffer_usage']*100:3.0f}% | LR: {lr:.2e}{metrics}")
 
     except KeyboardInterrupt:
-        print("\n训练被用户中断")
+        print("\nTraining interrupted by user")
 
     agent._save_model()
-    print(f"\n训练完成，模型已保存至 {agent.model_path}")
+    print(f"\nTraining completed, model saved to {agent.model_path}")
 
-    # 绘图（使用改进后的纵坐标范围）
+    # Plotting (with improved y-axis range)
     if normalized_rewards:
         rewards = np.array(normalized_rewards)
         episodes = np.arange(len(rewards))
@@ -908,7 +908,7 @@ def train():
         plt.figure(figsize=(10, 6))
         plt.plot(episodes, rewards, alpha=0.3, color='blue', label='Raw')
         plt.plot(smooth_episodes, smooth_rewards, color='red', linewidth=2, label=f'Smooth (window={window})')
-        # 使用数据的实际范围加5%边距
+        # Use actual data range plus 5% margin
         y_min = np.min(rewards)
         y_max = np.max(rewards)
         y_range = y_max - y_min

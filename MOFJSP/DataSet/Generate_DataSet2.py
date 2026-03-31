@@ -1,6 +1,6 @@
 """
-MOFJSP 对比数据集生成程序
-配置文件固定为 config2.json
+MOFJSP Comparison Dataset Generation Program
+The configuration file is fixed as config2.json.
 """
 
 import json
@@ -12,33 +12,33 @@ from typing import List, Dict, Any
 
 class MOFJSPComparisonGenerator:
     def __init__(self, config_file: str = "config2.json"):
-        """初始化生成器"""
+        """Initializes the generator"""
         if not os.path.exists(config_file):
-            print(f"配置文件 {config_file} 不存在，将创建默认对比数据集配置...")
+            print(f"Configuration file {config_file} does not exist, creating default comparison dataset configuration...")
             self.create_default_config(config_file)
 
         with open(config_file, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
-        # 创建输出目录
+        # Create output directory
         output_dir = self.config['output_config']['output_directory']
         os.makedirs(output_dir, exist_ok=True)
 
-        # 设置随机种子以保证可重复性
+        # Set random seeds for reproducibility
         random.seed(42)
         np.random.seed(42)
 
-        print(f"MOFJSP 对比数据集生成器已初始化")
-        print(f"配置文件: {config_file}")
-        print(f"输出目录: {output_dir}")
-        print(f"将生成 {self.config['comparison_config']['total_instances']} 个实例")
-        print("多目标数据格式: 作业数据之后，倒数第2行交货期，倒数第1行机器能力等级")
+        print(f"MOFJSP Comparison Dataset Generator initialized.")
+        print(f"Configuration file: {config_file}")
+        print(f"Output directory: {output_dir}")
+        print(f"Total instances to generate: {self.config['comparison_config']['total_instances']}")
+        print("Multi-objective data format: After job data, second to last line for due dates, last line for machine capability levels.")
 
     def create_default_config(self, config_file: str):
-        """创建默认对比数据集配置文件 (config2.json)"""
+        """Creates the default comparison dataset configuration file (config2.json)"""
         default_config = {
             "comparison_config": {
-                "description": "对比实验专用数据集，固定规模每种10个",
+                "description": "Dedicated dataset for comparison experiments, 10 instances for each fixed size.",
                 "fixed_sizes": [
                     {"name": "small", "jobs": 10, "machines": 5, "count": 10},
                     {"name": "small", "jobs": 15, "machines": 10, "count": 10},
@@ -72,11 +72,11 @@ class MOFJSPComparisonGenerator:
         with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(default_config, f, indent=2, ensure_ascii=False)
 
-        print(f"已创建默认对比数据集配置文件: {config_file}")
+        print(f"Default comparison dataset configuration file created: {config_file}")
 
     def generate_instance(self, instance_id: int, n_jobs: int, n_machines: int) -> Dict[str, Any]:
-        """生成单个MOFJSP实例 (复用原生成逻辑)"""
-        # 生成每个作业的工序数
+        """Generates a single MOFJSP instance (reuses the original generation logic)"""
+        # Generate number of operations for each job
         ops_per_job = np.random.randint(
             self.config['generation_parameters']['operations_per_job_range'][0],
             self.config['generation_parameters']['operations_per_job_range'][1] + 1,
@@ -84,7 +84,7 @@ class MOFJSPComparisonGenerator:
         )
         total_operations = int(np.sum(ops_per_job))
 
-        # 生成交货期（基于最短加工时间的倍数）
+        # Generate due dates (multiple of the minimum processing time)
         due_dates = []
         for job_idx in range(n_jobs):
             min_processing = ops_per_job[job_idx] * self.config['generation_parameters']['processing_time_range'][0]
@@ -92,13 +92,13 @@ class MOFJSPComparisonGenerator:
             due_date = int(min_processing * due_factor)
             due_dates.append(due_date)
 
-        # 生成工序信息
+        # Generate operation information
         operations = []
         operation_id = 0
         for job_idx in range(n_jobs):
             job_operations = []
             for op_idx in range(ops_per_job[job_idx]):
-                # 确定可用机器数量
+                # Determine the number of available machines
                 available_machines = self.select_available_machines(
                     n_machines,
                     self.config['generation_parameters']['machine_flexibility']
@@ -109,7 +109,7 @@ class MOFJSPComparisonGenerator:
                         self.config['generation_parameters']['processing_time_range'][0],
                         self.config['generation_parameters']['processing_time_range'][1]
                     )
-                    machine_times.append((machine_idx + 1, processing_time))  # 机器编号从1开始
+                    machine_times.append((machine_idx + 1, processing_time))  # Machine index starts from 1
                 job_operations.append({
                     'id': operation_id,
                     'job_id': job_idx + 1,
@@ -119,13 +119,13 @@ class MOFJSPComparisonGenerator:
                 operation_id += 1
             operations.append(job_operations)
 
-        # 机器能力等级
+        # Machine capability levels
         machine_capabilities = random.choices(
             self.config['generation_parameters']['machine_capability_levels'],
             k=n_machines
         )
 
-        # 计算机器柔性度实际值
+        # Calculate actual machine flexibility
         total_possible_assignments = sum(
             len(op['available_machines'])
             for job in operations
@@ -147,7 +147,7 @@ class MOFJSPComparisonGenerator:
         }
 
     def select_available_machines(self, total_machines: int, flexibility: float) -> List[int]:
-        """为工序选择可用机器"""
+        """Selects available machines for an operation"""
         min_available = max(1, int(total_machines * flexibility * 0.3))
         max_available = max(min_available, int(total_machines * flexibility * 1.2))
         n_available = random.randint(min_available, min(max_available, total_machines))
@@ -155,12 +155,12 @@ class MOFJSPComparisonGenerator:
         return sorted(available)
 
     def format_instance_text(self, instance_info: Dict[str, Any]) -> str:
-        """格式化为扩展 Brandimarte 格式"""
+        """Formats into extended Brandimarte format"""
         lines = []
-        # 第1行：作业数 机器数
+        # Line 1: Number of jobs, Number of machines
         lines.append(f"{instance_info['n_jobs']} {instance_info['n_machines']}")
 
-        # 作业信息行
+        # Job information lines
         for job_idx, job_ops in enumerate(instance_info['operations']):
             job_line = [len(job_ops)]
             for op in job_ops:
@@ -169,15 +169,15 @@ class MOFJSPComparisonGenerator:
                     job_line.extend([machine_id, proc_time])
             lines.append(" ".join(map(str, job_line)))
 
-        # 交货期行
+        # Due date line
         if self.config['output_config'].get('include_due_dates_in_data', True):
             lines.append(" ".join(map(str, instance_info['due_dates'])))
 
-        # 机器能力等级行
+        # Machine capability level line
         if self.config['output_config'].get('include_machine_capabilities_in_data', True):
             lines.append(" ".join(map(str, instance_info['machine_capabilities'])))
 
-        # 元数据注释
+        # Metadata comments
         lines.append(f"# Instance ID: {instance_info['instance_id']}")
         lines.append(f"# Total operations: {instance_info['total_operations']}")
         lines.append(f"# Actual flexibility: {instance_info['actual_flexibility']:.3f}")
@@ -187,7 +187,7 @@ class MOFJSPComparisonGenerator:
         return "\n".join(lines)
 
     def save_instance(self, instance_info: Dict[str, Any], size_name: str):
-        """保存实例到文件，文件名包含规模信息"""
+        """Saves the instance to a file, with size information in the filename."""
         filename = f"comp_{size_name}_{instance_info['n_jobs']}x{instance_info['n_machines']}_{instance_info['instance_id']:03d}.txt"
         filepath = os.path.join(
             self.config['output_config']['output_directory'],
@@ -196,53 +196,53 @@ class MOFJSPComparisonGenerator:
         instance_text = self.format_instance_text(instance_info)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(instance_text)
-        print(f"已保存: {filename}")
+        print(f"Saved: {filename}")
         return filepath
 
     def generate_comparison_dataset(self):
-        """生成对比数据集：按固定规模列表逐个生成"""
+        """Generates the comparison dataset: generates instances one by one according to the fixed size list."""
         fixed_sizes = self.config['comparison_config']['fixed_sizes']
-        instance_counter = 1  # 从1开始编号，便于文件名连续
+        instance_counter = 1  # Start numbering from 1 for easier continuous filenames
 
-        print("\n开始生成对比数据集...")
+        print("\nStarting comparison dataset generation...")
         for size_entry in fixed_sizes:
             size_name = size_entry['name']
             jobs = size_entry['jobs']
             machines = size_entry['machines']
             count = size_entry['count']
 
-            print(f"\n生成 {size_name} 规模 {jobs}×{machines} 共 {count} 个实例...")
+            print(f"\nGenerating {size_name} size {jobs}×{machines}, {count} instances in total...")
             for i in range(count):
                 inst = self.generate_instance(instance_counter, jobs, machines)
                 self.save_instance(inst, size_name)
-                # 简单打印摘要
-                print(f"  实例 {instance_counter:03d}: 工序数={inst['total_operations']}, "
-                      f"交货期范围={min(inst['due_dates'])}-{max(inst['due_dates'])}")
+                # Print a simple summary
+                print(f"  Instance {instance_counter:03d}: Operations={inst['total_operations']}, "
+                      f"Due date range={min(inst['due_dates'])}-{max(inst['due_dates'])}")
                 instance_counter += 1
 
-        # 生成统计信息
+        # Generate statistics
         self.generate_statistics()
-        print(f"\n对比数据集生成完成！共 {instance_counter-1} 个实例保存在 {self.config['output_config']['output_directory']}")
+        print(f"\nComparison dataset generation completed! Total {instance_counter-1} instances saved in {self.config['output_config']['output_directory']}")
 
     def generate_statistics(self):
-        """生成数据集统计文件"""
+        """Generates the dataset statistics file."""
         stats_file = os.path.join(
             self.config['output_config']['output_directory'],
             "comparison_dataset_statistics.txt"
         )
         lines = [
-            "MOFJSP 对比数据集统计信息",
+            "MOFJSP Comparison Dataset Statistics",
             "=" * 60,
-            f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"总实例数: {self.config['comparison_config']['total_instances']}",
-            "固定规模列表:",
+            f"Generation time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Total instances: {self.config['comparison_config']['total_instances']}",
+            "Fixed size list:",
         ]
         for sz in self.config['comparison_config']['fixed_sizes']:
             lines.append(f"  {sz['name']}: {sz['jobs']}×{sz['machines']} × {sz['count']}")
 
         with open(stats_file, 'w', encoding='utf-8') as f:
             f.write("\n".join(lines))
-        print(f"统计信息已保存至: {stats_file}")
+        print(f"Statistics saved to: {stats_file}")
 
 def main():
     generator = MOFJSPComparisonGenerator("config2.json")
