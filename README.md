@@ -230,6 +230,4 @@ All experimental results are saved in the `Figure_And_File/` directory:
 
 ## 10. Citation
 
-If you use this project's code or data, please cite the paper:
-
-> Jiang Jize, Zheng Qiang, Zhao Dongfang. Multi-Objective Flexible Job Shop Scheduling via Heterogeneous Disjunctive Graph and Hierarchical Reinforcement Learning. *Sensors*, 2026.
+Currently, the related papers have not been published; updates will follow.
