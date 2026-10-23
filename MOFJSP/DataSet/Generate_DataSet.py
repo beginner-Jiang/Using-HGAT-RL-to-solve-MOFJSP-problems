@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Any
 import argparse
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 class MOFJSPInstanceGenerator:
     def __init__(self, config_file: str = "config.json"):
         """Initializes the generator"""
@@ -24,6 +26,9 @@ class MOFJSPInstanceGenerator:
 
         # Create output directory
         output_dir = self.config['output_config']['output_directory']
+        if not os.path.isabs(output_dir):
+            output_dir = os.path.join(BASE_DIR, output_dir)
+        self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
         # Set random seeds for reproducibility
@@ -233,7 +238,7 @@ class MOFJSPInstanceGenerator:
         """Saves the instance to a file"""
         filename = f"mo_fjsp_{instance_info['instance_id']:03d}_{instance_info['size_type']}_{split}.txt"
         filepath = os.path.join(
-            self.config['output_config']['output_directory'],
+            self.output_dir,
             filename
         )
 
@@ -273,9 +278,6 @@ class MOFJSPInstanceGenerator:
 
         # Calculate the number of data lines
         # Total data lines = comment start position
-        # Job data lines = n_jobs
-        # Due date line = comment start position - 2
-        # Machine capability line = comment start position - 1
 
         # Read the due date line (second to last data line)
         due_dates_line = comment_start - 2
@@ -403,12 +405,12 @@ class MOFJSPInstanceGenerator:
         self.generate_statistics(all_instances)
 
         print(f"\nDataset generation completed! Total {len(all_instances)} instances generated.")
-        print(f"Instances saved in: {self.config['output_config']['output_directory']}")
+        print(f"Instances saved in: {self.output_dir}")
 
     def generate_statistics(self, all_instances: List[Dict[str, Any]]):
         """Generates dataset statistics"""
         stats_file = os.path.join(
-            self.config['output_config']['output_directory'],
+            self.output_dir,
             "dataset_statistics.txt"
         )
 

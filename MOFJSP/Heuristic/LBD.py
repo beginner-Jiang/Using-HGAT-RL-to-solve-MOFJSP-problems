@@ -1,11 +1,26 @@
 """
 Heuristic rule implementation: Least Load First - LBD
 """
+import os
 import numpy as np
 from typing import List, Dict, Tuple, Any
+import sys
+import matplotlib
+# Without a display session (background run, stdout redirected to a file, headless server)
+# the Qt backend cannot be initialised and the process would crash; fall back to the file-only
+# Agg backend and keep the default backend for interactive runs.
+if not sys.stdout.isatty():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
+
+# Every artefact of this rule is written under Figure_And_File, so that the
+# output location does not depend on the working directory of the caller.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "Heuristic",
+                         "LBD")
+os.makedirs(FIGURE_DIR, exist_ok=True)
 
 
 # Data structure definition
@@ -195,47 +210,58 @@ class LBDScheduler:
     def schedule_step(self) -> bool:
         """Executes one scheduling step, returns whether there are still operations to be scheduled"""
         available_ops = self.get_available_operations()
-
         if not available_ops:
             return False
 
-        # 1. LBD rule: Select the operation on the machine with the smallest load
-        selected_op = self.select_operation_for_scheduling(available_ops)
+        # Canonical least-loaded-machine rule: take the machine with the smallest load
+        # (ties by earliest availability and then index), then the ready operation that
+        machine = min(self.machines,
+                      key=lambda m: (m.current_load, m.available_time, m.machine_id))
 
-        if selected_op is None:
-            # If no suitable operation is found, try selecting the first available operation
-            selected_op = available_ops[0]
+        candidates = []
+        for operation in available_ops:
+            processing_time = operation.machine_times.get(machine.machine_id)
+            if processing_time is None:
+                continue
+            job = self.jobs[operation.job_id]
+            job_ready_time = 0
+            if operation.op_id > 0:
+                job_ready_time = job.operations[operation.op_id - 1].end_time
+            start = max(job_ready_time, machine.available_time)
+            candidates.append(((start + processing_time, processing_time, operation.job_id),
+                               operation, job_ready_time))
 
-        # 2. Find the machine with the smallest load for the selected operation
+        if candidates:
+            _key, selected_op, job_ready_time = min(candidates, key=lambda item: item[0])
+        else:
+            # No ready operation can run on the least-loaded machine: assign the ready
+            # operation that finishes earliest on any eligible machine.
+            best = None
+            for operation in available_ops:
+                job = self.jobs[operation.job_id]
+                job_ready_time = 0
+                if operation.op_id > 0:
+                    job_ready_time = job.operations[operation.op_id - 1].end_time
+                machine_id, completion, _load = self.find_best_machine_for_operation(
+                    operation, job_ready_time)
+                if machine_id < 0:
+                    continue
+                key = (completion, operation.job_id, operation.op_id)
+                if best is None or key < best[0]:
+                    best = (key, operation, job_ready_time, machine_id)
+            if best is None:
+                return False
+            _key, selected_op, job_ready_time, machine_id = best
+            machine = self.machines[machine_id]
+
         job = self.jobs[selected_op.job_id]
-        job_ready_time = 0
-        if selected_op.op_id > 0:
-            prev_op = job.operations[selected_op.op_id - 1]
-            job_ready_time = prev_op.end_time
-
-        best_machine_id, completion_time, _ = self.find_best_machine_for_operation(selected_op, job_ready_time)
-
-        if best_machine_id == -1:
-            # If no available machine, skip this operation
-            # Mark as scheduled but actually not assigned (this should not happen as we checked available machines)
-            selected_op.is_scheduled = True
-            job.complete_current_operation()
-            self.completed_operations += 1
-            return True
-
-        # 3. Assign the operation to the machine
-        best_machine = self.machines[best_machine_id]
-        actual_completion_time = best_machine.assign_operation(selected_op, job_ready_time)
-
-        # 4. Update job status
-        if actual_completion_time != float('inf'):
+        completion_time = machine.assign_operation(selected_op, job_ready_time)
+        if completion_time != float('inf'):
             job.complete_current_operation()
             self.completed_operations += 1
 
-        # 5. Update current time (minimum of earliest available times of all machines)
-        machine_times = [machine.available_time for machine in self.machines]
+        machine_times = [item.available_time for item in self.machines]
         self.current_time = min(machine_times) if machine_times else self.current_time
-
         return True
 
     def run_schedule(self):
@@ -432,7 +458,8 @@ def main():
     print("=" * 80)
 
     # Specify the data file path
-    file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"  # Ensure the file exists
+    file_path = os.path.join(_PROJECT_ROOT, "DataSet", "mo_fjsp_instances",
+                         "mo_fjsp_000_small_train.txt")  # Ensure the file exists
 
     # 1. Read the scheduling instance from the file
     try:
@@ -457,7 +484,7 @@ def main():
 
     # 4. Draw and save Gantt chart
     print("\nGenerating Gantt Chart...")
-    visualize_gantt_chart(jobs, machines, save_path="../Figure_And_File/Heuristic/LBD/gantt_chart_lbd.png")
+    visualize_gantt_chart(jobs, machines, save_path=os.path.join(FIGURE_DIR, "gantt_chart_lbd.png"))
 
     # 5. Export performance metrics to an Excel file
     try:
@@ -487,7 +514,7 @@ def main():
         df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'Note': ['No tardy jobs']})
 
         # Write to Excel file, containing two sheets
-        excel_file = '../Figure_And_File/Heuristic/LBD/LBD_metrics.xlsx'
+        excel_file = os.path.join(FIGURE_DIR, "LBD_metrics.xlsx")
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
             df_summary.to_excel(writer, sheet_name='Summary', index=False)
             df_tardy.to_excel(writer, sheet_name='TardyJobs', index=False)
@@ -537,3 +564,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

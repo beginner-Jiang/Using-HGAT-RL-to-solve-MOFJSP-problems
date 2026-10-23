@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 from typing import List, Dict, Any
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 class MOFJSPComparisonGenerator:
     def __init__(self, config_file: str = "config2.json"):
         """Initializes the generator"""
@@ -22,6 +24,9 @@ class MOFJSPComparisonGenerator:
 
         # Create output directory
         output_dir = self.config['output_config']['output_directory']
+        if not os.path.isabs(output_dir):
+            output_dir = os.path.join(BASE_DIR, output_dir)
+        self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
         # Set random seeds for reproducibility
@@ -190,7 +195,7 @@ class MOFJSPComparisonGenerator:
         """Saves the instance to a file, with size information in the filename."""
         filename = f"comp_{size_name}_{instance_info['n_jobs']}x{instance_info['n_machines']}_{instance_info['instance_id']:03d}.txt"
         filepath = os.path.join(
-            self.config['output_config']['output_directory'],
+            self.output_dir,
             filename
         )
         instance_text = self.format_instance_text(instance_info)
@@ -222,12 +227,12 @@ class MOFJSPComparisonGenerator:
 
         # Generate statistics
         self.generate_statistics()
-        print(f"\nComparison dataset generation completed! Total {instance_counter-1} instances saved in {self.config['output_config']['output_directory']}")
+        print(f"\nComparison dataset generation completed! Total {instance_counter-1} instances saved in {self.output_dir}")
 
     def generate_statistics(self):
         """Generates the dataset statistics file."""
         stats_file = os.path.join(
-            self.config['output_config']['output_directory'],
+            self.output_dir,
             "comparison_dataset_statistics.txt"
         )
         lines = [

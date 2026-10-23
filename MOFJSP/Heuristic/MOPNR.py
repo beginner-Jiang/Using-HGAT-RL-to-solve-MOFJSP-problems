@@ -1,11 +1,30 @@
 """
 Heuristic rule implementation: Most Operations Remaining - MOPNR
 """
+import os
 import numpy as np
+try:
+    from Heuristic.machine_rules import select_earliest_completion
+except ImportError:  # the file is also runnable as a script inside Heuristic/
+    from machine_rules import select_earliest_completion
 from typing import List, Dict, Tuple, Any
+import sys
+import matplotlib
+# Without a display session (background run, stdout redirected to a file, headless server)
+# the Qt backend cannot be initialised and the process would crash; fall back to the file-only
+# Agg backend and keep the default backend for interactive runs.
+if not sys.stdout.isatty():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
+
+# Every artefact of this rule is written under Figure_And_File, so that the
+# output location does not depend on the working directory of the caller.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "Heuristic",
+                         "MOPNR")
+os.makedirs(FIGURE_DIR, exist_ok=True)
 
 
 # Data structure definition
@@ -88,11 +107,12 @@ class Machine:
 
     def assign_operation(self, operation: Operation, start_time: float) -> float:
         """Assigns an operation to the machine, returns the completion time"""
-        best_machine_id = operation.get_best_machine()
-        if best_machine_id != self.machine_id:
+        # The machine is chosen by the scheduler (earliest completion); this method only
+        # verifies that the chosen machine can process the operation.
+        processing_time = operation.machine_times.get(self.machine_id)
+        if processing_time is None:
             return float('inf')
 
-        processing_time = operation.machine_times[self.machine_id]
         actual_start = max(start_time, self.available_time)
         end_time = actual_start + processing_time
 
@@ -158,14 +178,15 @@ class MOPNRScheduler:
                                         key=lambda x: (-x[1].remaining_ops, x[1].get_remaining_processing_time()))
 
         # Select the machine with the shortest processing time for the operation
-        best_machine_id = selected_op.get_best_machine()
-        best_machine = self.machines[best_machine_id]
 
         # Calculate the job's ready time (completion time of the preceding operation)
         job_ready_time = 0
         if selected_op.op_id > 0:
             prev_op = selected_job.operations[selected_op.op_id - 1]
             job_ready_time = prev_op.end_time
+
+        # Standard machine assignment: earliest completion on an eligible machine.
+        best_machine = select_earliest_completion(selected_op, self.machines, job_ready_time)
 
         # Assign the operation to the machine
         completion_time = best_machine.assign_operation(selected_op, job_ready_time)
@@ -389,7 +410,8 @@ def main():
     print("=" * 80)
 
     # Specify the data file path
-    file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"  # Ensure the file exists
+    file_path = os.path.join(_PROJECT_ROOT, "DataSet", "mo_fjsp_instances",
+                         "mo_fjsp_000_small_train.txt")  # Ensure the file exists
 
     # 1. Read the scheduling instance from the file
     try:
@@ -418,7 +440,7 @@ def main():
 
     # 4. Draw and save Gantt chart
     print("\nGenerating Gantt Chart...")
-    visualize_gantt_chart(jobs, machines, save_path="../Figure_And_File/Heuristic/MOPNR/gantt_chart_mopnr.png")
+    visualize_gantt_chart(jobs, machines, save_path=os.path.join(FIGURE_DIR, "gantt_chart_mopnr.png"))
 
     # 5. Export performance metrics to an Excel file
     try:
@@ -447,7 +469,7 @@ def main():
         df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'Note': ['No tardy jobs']})
 
         # Write to Excel file, containing two sheets
-        excel_file = '../Figure_And_File/Heuristic/MOPNR/MOPNR_metrics.xlsx'
+        excel_file = os.path.join(FIGURE_DIR, "MOPNR_metrics.xlsx")
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
             df_summary.to_excel(writer, sheet_name='Summary', index=False)
             df_tardy.to_excel(writer, sheet_name='TardyJobs', index=False)
@@ -493,3 +515,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

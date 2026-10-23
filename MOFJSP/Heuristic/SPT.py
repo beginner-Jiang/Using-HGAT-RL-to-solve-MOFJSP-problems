@@ -1,11 +1,30 @@
 """
 Heuristic rule implementation: Shortest Processing Time - SPT
 """
+import os
 import numpy as np
+try:
+    from Heuristic.machine_rules import select_earliest_completion
+except ImportError:  # the file is also runnable as a script inside Heuristic/
+    from machine_rules import select_earliest_completion
 from typing import List, Dict, Tuple, Any
+import sys
+import matplotlib
+# Without a display session (background run, stdout redirected to a file, headless server)
+# the Qt backend cannot be initialised and the process would crash; fall back to the file-only
+# Agg backend and keep the default backend for interactive runs.
+if not sys.stdout.isatty():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
+
+# Every artefact of this rule is written under Figure_And_File, so that the
+# output location does not depend on the working directory of the caller.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "Heuristic",
+                         "SPT")
+os.makedirs(FIGURE_DIR, exist_ok=True)
 
 
 # Data structure definition
@@ -72,13 +91,12 @@ class Machine:
 
     def assign_operation(self, operation: Operation, start_time: float) -> float:
         """Assigns an operation to the machine, returns the completion time"""
-        # Find the machine with the shortest processing time
-        best_machine_id = operation.get_best_machine()
-        if best_machine_id != self.machine_id:
-            # If this machine is not the optimal choice, return a large number indicating unsuitable
+        # The machine is chosen by the scheduler (earliest completion); this method only
+        # verifies that the chosen machine can process the operation.
+        processing_time = operation.machine_times.get(self.machine_id)
+        if processing_time is None:
             return float('inf')
 
-        processing_time = operation.machine_times[self.machine_id]
         # Ensure start time is not earlier than machine available time
         actual_start = max(start_time, self.available_time)
         end_time = actual_start + processing_time
@@ -133,8 +151,6 @@ class SPTScheduler:
         selected_op = min(available_ops, key=lambda op: op.get_min_processing_time())
 
         # 2. Select the machine for the operation (choose the machine with the shortest processing time)
-        best_machine_id = selected_op.get_best_machine()
-        best_machine = self.machines[best_machine_id]
 
         # 3. Calculate start time
         job = self.jobs[selected_op.job_id]
@@ -142,6 +158,11 @@ class SPTScheduler:
         if selected_op.op_id > 0:
             prev_op = job.operations[selected_op.op_id - 1]
             job_ready_time = prev_op.end_time
+
+        # Standard machine assignment: the eligible machine that completes the operation
+        # earliest.  The former minimum-processing-time choice ignored availability and made
+        # five of the six rules share one static assignment and one load-balance value.
+        best_machine = select_earliest_completion(selected_op, self.machines, job_ready_time)
 
         # 4. Assign operation to machine
         completion_time = best_machine.assign_operation(selected_op, job_ready_time)
@@ -365,7 +386,8 @@ def main():
     print("=" * 80)
 
     # Specify the data file path
-    file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"
+    file_path = os.path.join(_PROJECT_ROOT, "DataSet", "mo_fjsp_instances",
+                         "mo_fjsp_000_small_train.txt")
 
     # 1. Read the scheduling instance from the file
     try:
@@ -395,7 +417,7 @@ def main():
 
     # 4. Draw and save Gantt chart
     print("\nGenerating Gantt Chart...")
-    visualize_gantt_chart(jobs, machines, save_path="../Figure_And_File/Heuristic/SPT/gantt_chart_spt.png")
+    visualize_gantt_chart(jobs, machines, save_path=os.path.join(FIGURE_DIR, "gantt_chart_spt.png"))
 
     # 5. Export performance metrics to an Excel file
     try:
@@ -424,7 +446,7 @@ def main():
         df_tardy = pd.DataFrame(tardy_jobs_list) if tardy_jobs_list else pd.DataFrame({'Note': ['No tardy jobs']})
 
         # Write to Excel file, containing two sheets
-        excel_file = '../Figure_And_File/Heuristic/SPT/SPT_metrics.xlsx'
+        excel_file = os.path.join(FIGURE_DIR, "SPT_metrics.xlsx")
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
             df_summary.to_excel(writer, sheet_name='Summary', index=False)
             df_tardy.to_excel(writer, sheet_name='TardyJobs', index=False)
@@ -473,3 +495,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

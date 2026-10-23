@@ -4,6 +4,13 @@ Metaheuristic Algorithm Implementation: Non-dominated Sorting Genetic Algorithm 
 import numpy as np
 import random
 from typing import List, Dict, Tuple, Any, Set
+import sys
+import matplotlib
+# Without a display session (background run, stdout redirected to a file, headless server)
+# the Qt backend cannot be initialised and the process would crash; fall back to the file-only
+# Agg backend and keep the default backend for interactive runs.
+if not sys.stdout.isatty():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from dataclasses import dataclass
@@ -65,6 +72,10 @@ class Chromosome:
 
 class NSGA2Scheduler:
     """NSGA-II based scheduler"""
+
+    # Name shown in the console output and in the figure titles. Subclasses that
+    # reuse the visualisation helpers below override this attribute.
+    algorithm_name = "NSGA-II"
 
     def __init__(self, jobs: List[Job], machines: List[int],
                  population_size: int = 100,
@@ -255,13 +266,9 @@ class NSGA2Scheduler:
         if not machine_loads:
             load_balance = 0
         else:
-            avg_load = np.mean(machine_loads)
-            if avg_load == 0:
-                load_balance = 0
-            else:
-                # Use coefficient of variation (std/mean) as balance metric
-                std_load = np.std(machine_loads)
-                load_balance = std_load / avg_load
+            # Machine load balancing is defined as the standard deviation of the machine
+            # loads, identical to the definition adopted by the reinforcement learning
+            load_balance = float(np.std(machine_loads))
 
         # 3. Total tardiness
         total_tardiness = 0
@@ -630,7 +637,7 @@ class NSGA2Scheduler:
     def run(self):
         """Run NSGA-II algorithm"""
         print("=" * 80)
-        print("NSGA-II Algorithm Started")
+        print(f"{self.algorithm_name} Algorithm Started")
         print("=" * 80)
         print(f"Population size: {self.population_size}")
         print(f"Maximum generations: {self.max_generations}")
@@ -673,7 +680,7 @@ class NSGA2Scheduler:
             return
 
         print("=" * 80)
-        print("NSGA-II Scheduling Results - Pareto Front Solutions")
+        print(f"{self.algorithm_name} Scheduling Results - Pareto Front Solutions")
         print("=" * 80)
 
         # Sort Pareto front solutions by makespan
@@ -759,7 +766,7 @@ class NSGA2Scheduler:
 
             plt.colorbar(scatter, ax=ax4, label='Normalized Makespan')
 
-        plt.suptitle('NSGA-II Convergence and Pareto Front', fontsize=16)
+        plt.suptitle(f'{self.algorithm_name} Convergence and Pareto Front', fontsize=16)
         plt.tight_layout()
 
         if save_path:
@@ -835,7 +842,7 @@ class NSGA2Scheduler:
         ax.set_ylabel('Machine')
         ax.set_yticks(range(len(machine_schedule)))
         ax.set_yticklabels([f'Machine {mid}' for mid in sorted(machine_schedule.keys())])
-        ax.set_title(f'NSGA-II Best Schedule #{solution_idx+1} - Gantt Chart', fontsize=14)
+        ax.set_title(f'{self.algorithm_name} Best Schedule #{solution_idx+1} - Gantt Chart', fontsize=14)
 
         # Add legend
         from matplotlib.patches import Patch
@@ -933,7 +940,8 @@ def main():
     print("=" * 80)
 
     # Specify data file path (can be modified or passed via command line)
-    file_path = "../mo_fjsp_instances/mo_fjsp_000_small_train.txt"  # ensure file exists
+    file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "DataSet", "mo_fjsp_instances", "mo_fjsp_000_small_train.txt")  # ensure file exists
 
     # 1. Read scheduling instance from file
     print("\nReading scheduling instance...")
@@ -972,9 +980,12 @@ def main():
 
     # 5. Generate visualizations and save to current directory
     print("\nGenerating visualizations...")
-    scheduler.visualize_convergence(save_path="../Meta_Heuristic/convergence.png")
-    scheduler.visualize_pareto_front_3d(save_path="../Meta_Heuristic/pareto_front_3d.png")
-    scheduler.visualize_best_schedule_gantt(0, save_path="../Meta_Heuristic/gantt_chart.png")
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "Figure_And_File", "Meta_Heuristic", "NSGA_II")
+    os.makedirs(output_dir, exist_ok=True)
+    scheduler.visualize_convergence(save_path=os.path.join(output_dir, "convergence.png"))
+    scheduler.visualize_pareto_front_3d(save_path=os.path.join(output_dir, "pareto_front_3d.png"))
+    scheduler.visualize_best_schedule_gantt(0, save_path=os.path.join(output_dir, "gantt_chart.png"))
 
     # 6. Performance statistics
     if best_solutions:

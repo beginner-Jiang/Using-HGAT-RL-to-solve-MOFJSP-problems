@@ -36,7 +36,7 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 # Default paths
-DEFAULT_INSTANCE_DIR = "../mo_fjsp_instances"
+DEFAULT_INSTANCE_DIR = "../DataSet/mo_fjsp_instances"
 DEFAULT_TEST_PATTERN = "mo_fjsp_*_test.txt"
 DEFAULT_MODEL_DIR = "../model/ppo_hgat"
 DEFAULT_MODEL_NAME = "ppo_hgat_best.pth"
@@ -330,25 +330,27 @@ class HeteroGraphEnv:
         # Record schedule (optional)
         self.scheduled_ops.append((job.item(), op.item(), machine.item(), start.item(), end.item()))
 
+        # The load-balance variation ΔLB_t must be the difference of the load standard deviation
+        # between "before and after this assignment": record the standard deviation before the assignment, update the machine loads and take the standard deviation afterwards; the original implementation accumulated
+        # p_time and then accumulated p_time again on the same machine, which is not the load change caused by this assignment (fixed to a single-step difference).
+        old_LB = torch.std(self.machine_load)
         self.machine_available_time[machine.long()] = end
         self.machine_load[machine.long()] += p_time
+        new_LB = torch.std(self.machine_load)
+        delta_LB = new_LB - old_LB
         self.job_next_op[job.long()] = self.job_next_op[job.long()] + 1
         self.job_completion_time[job.long()] = torch.maximum(self.job_completion_time[job.long()], end)
         self.current_time = torch.maximum(self.current_time, end)
         self.op_finish_time[op_idx] = end
         self.op_scheduled[op_idx] = True
 
-        old_LB = torch.std(self.machine_load)
-        temp_load = self.machine_load.clone()
-        temp_load[machine.long()] += p_time
-        new_LB = torch.std(temp_load)
-        delta_LB = new_LB - old_LB
-
         norm_p = p_time / self.global_max_proc_time_tensor
         due = self.due_dates_tensor[job.long()]
         t_c = self.current_time
         n_i = self.ops_per_job_tensor[job.long()]
-        u_ij = torch.clamp(due - t_c, min=0) / (self.global_max_due_date_tensor * n_i + EPS)
+        # Operation urgency: zero while the operation finishes before its due date and
+        # proportional to the lateness once the due date is exceeded. Using the lateness
+        u_ij = torch.clamp(end - due, min=0) / (self.global_max_due_date_tensor * n_i + EPS)
 
         reward = - (W1 * norm_p + W2 * delta_LB / self.global_max_proc_time_tensor + W3 * u_ij)
         reward /= self.cfg.reward_scaling
@@ -421,8 +423,8 @@ class HeteroGraphEnv:
             op_mask[avail_op_indices] = 1.0
 
         return {
-            'op_feats': self.op_feats_t,
-            'mac_feats': self.mac_feats_t,
+            'op_feats': self.op_feats_t.clone(),  # in-place updated tensors must be copied, otherwise later steps overwrite the trajectory state
+            'mac_feats': self.mac_feats_t.clone(),  # in-place updated tensors must be copied, otherwise later steps overwrite the trajectory state
             'edges': edges_t,
             'edge_feats': edge_feats_t,
             'op_mask': op_mask,

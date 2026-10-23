@@ -3,6 +3,12 @@ PPO+HGAT Ablation Study Training
 Trains experiments A1~A4, A5 directly copies the pre-trained model.
 """
 
+# This is the sequential entry point of the study: it walks every entry of
+# common.EXPERIMENTS through common.train_experiment, so it keeps the same environment, the
+# same recipe and the same checkpoints as the managed queue (_Review/_p97_train_ablation.py with
+# _p97_ablation_arm.py) and never bypasses them.  The managed queue is the advised path because
+# it resumes and gates the arms; this file stays for a single-machine rerun of one session.
+
 from common import EXPERIMENTS, train_experiment, cfg
 
 
