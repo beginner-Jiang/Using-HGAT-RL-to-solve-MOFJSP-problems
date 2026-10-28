@@ -8,6 +8,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import sys
+try:
+    import numpy._core  # noqa: F401
+except ModuleNotFoundError:
+    import numpy.core as _numpy_core
+    sys.modules.setdefault("numpy._core", _numpy_core)
+    for _numpy_sub in ("multiarray", "numeric", "umath", "_multiarray_umath"):
+        _numpy_mod = getattr(_numpy_core, _numpy_sub, None)
+        if _numpy_mod is not None:
+            sys.modules.setdefault("numpy._core." + _numpy_sub, _numpy_mod)
 import random
 import os
 import sys
