@@ -44,8 +44,8 @@ if torch.cuda.is_available():
 
 INSTANCE_DIR = "../mo_fjsp_instances"
 FILE_PATTERN = "mo_fjsp_*_train.txt"
-MODEL_DIR = "../model/ppo_hgat"
-BEST_MODEL_PATH = os.path.join(MODEL_DIR, "ppo_hgat_best.pth")
+MODEL_DIR = "../model/hghrl"
+BEST_MODEL_PATH = os.path.join(MODEL_DIR, "hghrl_best.pth")
 
 TRAIN_RATIO = 0.6
 VAL_RATIO = 0.2

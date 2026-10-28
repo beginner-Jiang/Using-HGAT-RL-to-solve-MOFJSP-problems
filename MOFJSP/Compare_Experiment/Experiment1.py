@@ -1,5 +1,5 @@
 """
-Experiment 1: simple dispatching rules vs PPO_HGAT (pre-trained model)
+Experiment 1: simple dispatching rules vs HGHRL (pre-trained model)
 The compared scales (jobs x machines) come from a fixed list and every scale holds 10 instances.
 
 The evaluation protocol is identical to Experiment 2 and to the ablation study: every reinforcement
@@ -111,10 +111,10 @@ except ImportError:
     read_mwkr = None
 
 
-# Import the components required by PPO_HGAT
+# Import the components required by HGHRL
 
 try:
-    from PPO_HGAT.PPO_HGAT import (
+    from HGHRL.HGHRL import (
         MOFJSPInstance,
         HeteroGraphEnv,
         HeteroGAT,
@@ -129,8 +129,8 @@ try:
         read_fjsp_instance as read_ppo_instance,
     )
 except ImportError as e:
-    print(f"Error: cannot import the PPO_HGAT module: {e}")
-    print("Check that PPO_HGAT/PPO_HGAT.py exists and that the folder name is PPO_HGAT.")
+    print(f"Error: cannot import the HGHRL module: {e}")
+    print("Check that HGHRL/HGHRL.py exists and that the folder name is HGHRL.")
     sys.exit(1)
 
 try:
@@ -152,7 +152,7 @@ RULE_MAP = {
 
 
 # Raw result cache: a full Experiment 1 run re-runs every dispatching rule and the
-# pre-trained PPO_HGAT policy on every evaluation instance, so the per-instance values
+# pre-trained HGHRL policy on every evaluation instance, so the per-instance values
 EXP1_CACHE_PATH = os.path.join(PROJECT_ROOT, "Figure_And_File", "Compare_Experiment",
                                os.environ.get("EXP1_CACHE_FILE", "").strip()
                                or "exp1_raw_results.pkl")
@@ -223,9 +223,9 @@ EVAL_BATCH = 8
 EVAL_SEED = 1000
 
 
-def run_ppo_hgat(file_path, model_path, global_max_vals):
+def run_hghrl(file_path, model_path, global_max_vals):
     """
-    Load the pre-trained PPO+HGAT model, run one schedule and return (makespan, load_balance,
+    Load the pre-trained HGHRL model, run one schedule and return (makespan, load_balance,
     total_tardiness, time_cost).
 
     global_max_vals is (max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date,
@@ -532,7 +532,7 @@ def export_to_excel(results, filename="Experiment1_Result.xlsx", stats=None):
 WEIGHT = [0.4, 0.3, 0.3]
 
 # Methods that take part in the tests and the export, in report order
-METHOD_ORDER = ['SPT', 'EDD', 'LBD', 'FIFO', 'MOPNR', 'MWKR', 'HeteroGAT+PPO']
+METHOD_ORDER = ['SPT', 'EDD', 'LBD', 'FIFO', 'MOPNR', 'MWKR', 'HGHRL']
 
 # Generic dispatching rules whose deterministic schedules join the candidate set of the
 # proposed method (hybrid decoding: the best of the policy candidates and the rule
@@ -543,7 +543,7 @@ RULE_CANDIDATES = ('SPT', 'EDD', 'LBD', 'FIFO', 'MOPNR', 'MWKR')
 CANDIDATE_SOURCE = {}
 
 # Reference method and metrics of the paired tests (the per-instance lists come from main)
-STAT_REFERENCE = 'HeteroGAT+PPO'
+STAT_REFERENCE = 'HGHRL'
 # The aggregated objective F is the main indicator of the paper and takes part in the paired
 # Wilcoxon and Friedman tests together with the three single objectives
 STAT_METRIC_SPECS = [('F', 'F_list'), ('Cmax', 'Cmax_list'), ('LB', 'LB_list'), ('Tardy', 'Tardy_list')]
@@ -787,7 +787,7 @@ def print_statistical_tests(pairwise_rows, friedman_rows):
     print("Statistical significance results")
     print("=" * 120)
 
-    print("\n[Paired Wilcoxon signed-rank test] HeteroGAT+PPO vs baselines (Holm-Bonferroni)")
+    print("\n[Paired Wilcoxon signed-rank test] HGHRL vs baselines (Holm-Bonferroni)")
     header = (f"{'Scale':<8} | {'Metric':<7} | {'Baseline':<12} | {'W':>10} | {'p-value':>10} | "
               f"{'Holm p':>10} | {'Sig.':<6} | {'Cliff delta':>11}")
     print(header)
@@ -844,7 +844,7 @@ def export_candidate_sources(instance_dict):
 def main():
     # Use paths relative to the project root
     DATA_DIR = os.path.join(PROJECT_ROOT, "DataSet", "comparison_instances")
-    MODEL_PATH = os.path.join(PROJECT_ROOT, "model/ppo_hgat/ppo_hgat_best.pth")
+    MODEL_PATH = os.path.join(PROJECT_ROOT, "model/hghrl/hghrl_best.pth")
 
     # Fixed list of compared scales
     size_list = [
@@ -878,9 +878,9 @@ def main():
           f"max_ops={global_max_vals[2]}, max_proc_time={global_max_vals[3]:.2f}, "
           f"max_due_date={global_max_vals[4]:.2f}, max_capability={global_max_vals[5]}")
 
-    # Compared methods (PPO_HGAT is reported as HeteroGAT+PPO)
-    methods = ['SPT', 'EDD', 'LBD', 'FIFO', 'MOPNR', 'MWKR', 'PPO_HGAT']
-    DISPLAY_NAME = {'PPO_HGAT': 'HeteroGAT+PPO'}
+    # Compared methods (HGHRL is reported as HGHRL)
+    methods = ['SPT', 'EDD', 'LBD', 'FIFO', 'MOPNR', 'MWKR', 'HGHRL']
+    DISPLAY_NAME = {'HGHRL': 'HGHRL'}
 
     # results[scale_key][method] = {
     #   'names': instance file names, used to align the paired tests by instance,
@@ -921,10 +921,10 @@ def main():
             total_time = 0.0
             for fpath in file_list:
                 try:
-                    if method == 'PPO_HGAT':
+                    if method == 'HGHRL':
                         if not os.path.isfile(MODEL_PATH):
                             raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
-                        m, lb, tardy, t = run_ppo_hgat(fpath, MODEL_PATH, global_max_vals)
+                        m, lb, tardy, t = run_hghrl(fpath, MODEL_PATH, global_max_vals)
                     else:
                         m, lb, tardy, t = run_simple_rule(method, fpath)
                     record['names'].append(os.path.basename(fpath))

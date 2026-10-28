@@ -180,9 +180,9 @@ def _plot_gap(rows, methods, folder, stem, title, single_panel=False):
         "Proposed-policy": "#1f4e79", "Proposed-policy-refined": "#c55a11",
         "Proposed-hybrid": "#c55a11",
     }
-    labels = {"Proposed-policy": "HGAT+PPO (policy)",
-              "Proposed-policy-refined": "HGAT+PPO (+refine)",
-              "Proposed-hybrid": "HGAT+PPO (hybrid)"}
+    labels = {"Proposed-policy": "HGHRL (policy)",
+              "Proposed-policy-refined": "HGHRL (+refine)",
+              "Proposed-hybrid": "HGHRL (hybrid)"}
     families = [name for name in ("Brandimarte", "Lawrence")
                 if any(row["family"] == name for row in rows)]
     if single_panel:
@@ -235,9 +235,9 @@ def _plot_ranks(overall, methods, folder, stem, title):
         "Proposed-policy": "#1f4e79", "Proposed-policy-refined": "#c55a11",
         "Proposed-hybrid": "#c55a11",
     }
-    labels = {"Proposed-policy": "HGAT+PPO (policy)",
-              "Proposed-policy-refined": "HGAT+PPO (+refine)",
-              "Proposed-hybrid": "HGAT+PPO (hybrid)"}
+    labels = {"Proposed-policy": "HGHRL (policy)",
+              "Proposed-policy-refined": "HGHRL (+refine)",
+              "Proposed-hybrid": "HGHRL (hybrid)"}
     if not overall.get("ranks"):
         return
     ordered = sorted(overall["ranks"], key=lambda m: overall["ranks"][m])

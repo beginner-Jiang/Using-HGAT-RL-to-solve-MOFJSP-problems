@@ -151,9 +151,9 @@ print(f"Project root: {PROJECT_ROOT}")
 # Generic data reading helpers (used only to compute the global maximum values)
 
 try:
-    from PPO_HGAT.PPO_HGAT import read_fjsp_instance as read_ppo_instance
+    from HGHRL.HGHRL import read_fjsp_instance as read_ppo_instance
 except ImportError:
-    print("Error: cannot import read_fjsp_instance from PPO_HGAT.PPO_HGAT")
+    print("Error: cannot import read_fjsp_instance from HGHRL.HGHRL")
     sys.exit(1)
 
 
@@ -299,10 +299,10 @@ except ImportError as e:
     GAT_DEVICE = None
 
 
-# PPO+HGAT module
+# HGHRL module
 
 try:
-    from PPO_HGAT.PPO_HGAT import (
+    from HGHRL.HGHRL import (
         HeteroGAT,
         UpperPolicy,
         LowerPolicy,
@@ -315,7 +315,7 @@ try:
         DEVICE as HGAT_DEVICE
     )
 except ImportError as e:
-    print(f"Warning: cannot import the HGAT+PPO module ({e}); the method is skipped.")
+    print(f"Warning: cannot import the HGHRL module ({e}); the method is skipped.")
     HeteroGAT = None
     UpperPolicy = None
     LowerPolicy = None
@@ -364,7 +364,7 @@ MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
 DQN_MODEL_PATH = os.path.join(MODEL_DIR, "dqn/dqn_model.pth")
 PPO_MLP_MODEL_PATH = os.path.join(MODEL_DIR, "ppo/ppo_model.pth")
 PPO_GAT_MODEL_PATH = os.path.join(MODEL_DIR, "ppo_gat/ppo_gat_best.pth")
-PPO_HGAT_MODEL_PATH = os.path.join(MODEL_DIR, "ppo_hgat/ppo_hgat_best.pth")
+HGHRL_MODEL_PATH = os.path.join(MODEL_DIR, "hghrl/hghrl_best.pth")
 # Model paths of the added comparison methods (run the corresponding module main() to train them first)
 HGNN_MODEL_PATH = os.path.join(MODEL_DIR, "hgnn/hgnn_best.pth")
 DAN_MODEL_PATH = os.path.join(MODEL_DIR, "dan/dan_best.pth")
@@ -391,7 +391,7 @@ EVOLUTIONARY_METHODS = ("MOEA/D", "NSGA-II", "NSGA-III", "RVEA")
 
 # Order of the methods used for the statistical tests and the export (kept consistent with the paper tables)
 METHOD_ORDER = ["MOEA/D", "NSGA-II", "NSGA-III", "RVEA", "MLP+DQN", "MLP+PPO",
-                "GAT+PPO", "HGNN", "DAN", "RESCHED", "HeteroGAT+PPO"]
+                "GAT+PPO", "HGNN", "DAN", "RESCHED", "HGHRL"]
 
 # Evaluation budget of the comparison, in the currency both families share: one evaluated schedule of
 # one instance.  A learned method constructs NUM_RUNS_RL schedules with its own policy per instance
@@ -1089,14 +1089,14 @@ def run_ppo_gat(file_path, model_path, seed_list, global_max_vals):
 
     return objectives_list
 
-def run_ppo_hgat(file_path, model_path, seed_list, global_max_vals):
-    """Run the HeteroGAT+PPO model and return the objective values of several solutions (see run_dqn_mlp for the meaning of global_max_vals)"""
+def run_hghrl(file_path, model_path, seed_list, global_max_vals):
+    """Run the HGHRL model and return the objective values of several solutions (see run_dqn_mlp for the meaning of global_max_vals)"""
     if HGATInstance is None or HierarchicalPPOAgent is None:
-        raise ImportError("The HGAT+PPO module was not imported")
+        raise ImportError("The HGHRL module was not imported")
     (global_max_jobs, global_max_machines, global_max_ops,
      global_max_proc_time, global_max_due_date, global_max_capability) = global_max_vals
 
-    # Use the generic reader (the PPO_HGAT reader returns 5 values)
+    # Use the generic reader (the HGHRL reader returns 5 values)
     jobs, machine_capabilities, due_dates, file_name, size = read_ppo_instance(file_path)
 
     # Create the instance object, which requires the global maximum values; the machine capability must be normalised by the global maximum,
@@ -1127,13 +1127,13 @@ def run_ppo_hgat(file_path, model_path, seed_list, global_max_vals):
     agent = HierarchicalPPOAgent(inst, gat, upper, lower, critic_u, critic_l, HGATConfig,
                                 hgat_state_norm)
     if not os.path.exists(model_path):
-        print(f"Warning: model file {model_path} not found; HGAT+PPO may fail.")
+        print(f"Warning: model file {model_path} not found; HGHRL may fail.")
         return []
     try:
         agent.load(model_path)
-        print(f"Loaded the HGAT+PPO model: {model_path}")
+        print(f"Loaded the HGHRL model: {model_path}")
     except Exception as e:
-        print(f"Warning: cannot load the HGAT+PPO model: {e}")
+        print(f"Warning: cannot load the HGHRL model: {e}")
         return []
     agent.gat.eval()
     agent.upper.eval()
@@ -1427,7 +1427,7 @@ def mean_std_ci95(samples):
     return mean, std, half
 
 
-def compute_statistical_tests(exp2_results, reference="HeteroGAT+PPO"):
+def compute_statistical_tests(exp2_results, reference="HGHRL"):
     """
     Produce the statistical test results for every scale and every metric.
 
@@ -1523,7 +1523,7 @@ def print_statistical_tests(pairwise_rows, friedman_rows):
     print("Statistical significance results")
     print("=" * 120)
 
-    print("\n[Paired Wilcoxon signed-rank test] HeteroGAT+PPO vs baselines (Holm-Bonferroni)")
+    print("\n[Paired Wilcoxon signed-rank test] HGHRL vs baselines (Holm-Bonferroni)")
     header = (f"{'Scale':<8} | {'Metric':<5} | {'Baseline':<12} | {'W':>10} | {'p-value':>10} | "
               f"{'Holm p':>10} | {'Sig.':<6} | {'Cliff delta':>11}")
     print(header)
@@ -1596,7 +1596,7 @@ def main():
         ("HGNN", run_hgnn, HGNN_MODEL_PATH),
         ("DAN", run_dan, DAN_MODEL_PATH),
         ("RESCHED", run_resched, RESCHED_MODEL_PATH),
-        ("HeteroGAT+PPO", run_ppo_hgat, PPO_HGAT_MODEL_PATH),
+        ("HGHRL", run_hghrl, HGHRL_MODEL_PATH),
     ]
     # A sharded run only handles the given methods and the other shards cover the rest; after merging the caches the per-scale results are equivalent to a sequential run
     if _SHARD_METHODS:
@@ -1825,10 +1825,10 @@ def main():
                 'SP_list': list(sp_list),
             }
 
-        # Compute GAP with HeteroGAT+PPO as the reference
-        baseline = avg_F.get("HeteroGAT+PPO", np.nan)
+        # Compute GAP with HGHRL as the reference
+        baseline = avg_F.get("HGHRL", np.nan)
         for method_name in avg_F.keys():
-            if method_name == "HeteroGAT+PPO":
+            if method_name == "HGHRL":
                 avg_gap[method_name] = 0.0
             else:
                 avg_gap[method_name] = (avg_F[method_name] - baseline) / baseline * 100 if baseline != 0 else np.nan

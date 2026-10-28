@@ -5,7 +5,7 @@ No free-floating text objects: their screen position does not survive the export
 this build.  The series name carries the fit information and Origin places the legend, so the
 layout cannot drift.  Each variant is exported as PNG into .../Variants.
 
-Usage:  python PPO_HGAT/Time_Space_Complexity_Analysis/complexity_variants.py
+Usage:  python HGHRL/Time_Space_Complexity_Analysis/complexity_variants.py
 """
 import csv
 import os
@@ -16,7 +16,7 @@ import numpy as np
 import win32com.client
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT = os.path.join(ROOT, "Figure_And_File", "PPO_HGAT", "Time_Space_Complexity_Analysis")
+OUT = os.path.join(ROOT, "Figure_And_File", "HGHRL", "Time_Space_Complexity_Analysis")
 VAR = os.path.join(OUT, "Variants")
 SRC = os.path.join(OUT, "runtime_scaling_data.csv")
 DPI = 300

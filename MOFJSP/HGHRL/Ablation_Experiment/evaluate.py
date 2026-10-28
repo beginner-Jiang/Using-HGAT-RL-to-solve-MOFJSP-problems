@@ -1,5 +1,5 @@
 """
-PPO+HGAT Ablation Study Evaluation
+HGHRL Ablation Study Evaluation
 Loads models from all experiments, tests them on the comparison dataset, outputs a table and saves as CSV.
 Supports checkpoint resume: experiment results are saved in the Check_Point directory, finally aggregated into a CSV table.
 Enforces that model files for all experiments must exist, otherwise exits with error.
@@ -39,6 +39,10 @@ except ImportError:
     HAS_SCIPY = False
     print("Warning: scipy not installed, the statistical significance tests will be skipped.")
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
 from common import (
     DEVICE, EPS, W1, W2, W3, SEED,
     COMPARISON_DIR, EXPERIMENTS,
@@ -49,11 +53,8 @@ from common import (
 )
 
 # Checkpoint and final result save paths
-CHECK_POINT_DIR = os.path.join(PROJECT_ROOT, "Figure_And_File", "PPO_HGAT", "Ablation_Experiment", "Check_Point")
-FINAL_DIR = os.path.join(PROJECT_ROOT, "Figure_And_File", "PPO_HGAT", "Ablation_Experiment", "Final")
-os.makedirs(CHECK_POINT_DIR, exist_ok=True)
-os.makedirs(FINAL_DIR, exist_ok=True)
-
+CHECK_POINT_DIR = os.path.join(PROJECT_ROOT, "Figure_And_File", "HGHRL", "Ablation_Experiment", "Check_Point")
+FINAL_DIR = os.path.join(PROJECT_ROOT, "Figure_And_File", "HGHRL", "Ablation_Experiment", "Final")
 ABLATION_EVAL_BATCH = max(1, int(os.environ.get("ABLATION_EVAL_BATCH", "8")))
 
 # Helper function: extract encoder state_dict from checkpoint
@@ -863,6 +864,9 @@ def export_final_csv(dim_metrics, a5_avg_F, file_to_size, dim_to_files, stats=No
 
 # Main function
 def main():
+    os.makedirs(CHECK_POINT_DIR, exist_ok=True)
+    os.makedirs(FINAL_DIR, exist_ok=True)
+
     # Check comparison dataset directory
     if not os.path.exists(COMPARISON_DIR):
         print(f"Error: Comparison dataset directory {COMPARISON_DIR} does not exist. Please run Generate_DataSet2.py first to generate data.")
@@ -1030,7 +1034,7 @@ def main():
 
                 # Keep the same convention as comparison experiments 1/2: HV/GD/SP are computed uniformly on the obtained non-dominated front.
                 # In this experiment every variant returns all solutions from 50 samples, including dominated ones; without filtering them first, GD/SP would be
-                # noticeably inflated (HV is unaffected because of monotonicity) and the row of the full model A5 would not match HeteroGAT+PPO in comparison experiment 2.
+                # noticeably inflated (HV is unaffected because of monotonicity) and the row of the full model A5 would not match HGHRL in comparison experiment 2.
                 front_idx = nondominated_sort(obj_list)
                 front = [obj_list[i] for i in front_idx] if front_idx else list(obj_list)
 

@@ -1,5 +1,5 @@
 """
-PPO_HGAT Validation Program
+HGHRL Validation Program
 Loads the trained best model, runs scheduling on validation set instances, and computes validation metrics:
 - Normalized cumulative reward R = total reward / total number of operations
 - Average KL divergence (higher + lower)
@@ -35,8 +35,8 @@ if torch.cuda.is_available():
 
 INSTANCE_DIR = "../DataSet/mo_fjsp_instances"
 VAL_FILE_PATTERN = "mo_fjsp_*_val.txt"          # Validation set file pattern
-MODEL_DIR = "../model/ppo_hgat"
-MODEL_NAME = "ppo_hgat_best.pth"
+MODEL_DIR = "../model/hghrl"
+MODEL_NAME = "hghrl_best.pth"
 REWARD_SCALING = 5.0
 REWARD_CLIP = 2.0
 
@@ -842,7 +842,7 @@ def run_episode(agent, env, deterministic=False):
 # Main validation function
 def validate():
     print("=" * 50)
-    print("PPO_HGAT Model Validation (Metrics Computed Exactly as in Training)")
+    print("HGHRL Model Validation (Metrics Computed Exactly as in Training)")
     print("=" * 50)
 
     # Load validation set instances and get global maximums

@@ -19,9 +19,9 @@ budget of episodes, the same update structure and the same evaluation - so that 
 studies are comparable.  The parameter study no longer scans the weights themselves; it defers to this
 study, which is why the two exist side by side.
 
-Output: tables only, written to Figure_And_File/PPO_HGAT/Multi-objective_Weight_Experiment/.
+Output: tables only, written to Figure_And_File/HGHRL/Multi-objective_Weight_Experiment/.
 
-Usage:  python PPO_HGAT/Multi-objective_Weight_Experiment/Multi_Objective_Weight.py
+Usage:  python HGHRL/Multi-objective_Weight_Experiment/Multi_Objective_Weight.py
 """
 import os
 import json
@@ -35,13 +35,13 @@ import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(HERE))
-for path in (os.path.join(PROJECT_ROOT, "PPO_HGAT", "Param_Experiment"), PROJECT_ROOT):
+for path in (os.path.join(PROJECT_ROOT, "HGHRL", "Param_Experiment"), PROJECT_ROOT):
     if path not in sys.path:
         sys.path.insert(0, path)
 
 import Param as P  # noqa: E402 - the protocol of the parameter study, reused on purpose
 
-OUT_DIR = os.path.join(PROJECT_ROOT, "Figure_And_File", "PPO_HGAT", "Multi-objective_Weight_Experiment")
+OUT_DIR = os.path.join(PROJECT_ROOT, "Figure_And_File", "HGHRL", "Multi-objective_Weight_Experiment")
 
 # Widths and step size of the recipe, the values the parameter study trains its configurations with.
 ENC_WIDTH = 256
@@ -103,7 +103,7 @@ def train_and_measure(weights, train_instances, test_instances, geometry):
                                    gamma=cfg.gamma, beta=cfg.beta, lr=LR, lam=1.0,
                                    state_norm=state_norm)
     # Curriculum of the draw.  The recipe this study measures trains its model on instances that grow
-    # with the progress of the run (PPO_HGAT.Config.curriculum_episodes), while this function drew
+    # with the progress of the run (HGHRL.Config.curriculum_episodes), while this function drew
     small = [item for item in train_instances if getattr(item, "size", "") == "small"] or train_instances
     medium = [item for item in train_instances if getattr(item, "size", "") == "medium"]
     large = [item for item in train_instances if getattr(item, "size", "") == "large"]

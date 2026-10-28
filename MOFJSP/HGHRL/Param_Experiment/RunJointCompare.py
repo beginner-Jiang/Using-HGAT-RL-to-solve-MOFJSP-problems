@@ -7,7 +7,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKER = os.path.join(HERE, "JointCompare.py")
-RESULTS = r"D:\360MoveData\Users\lenovo\Desktop\撰写的论文\MOFJSP(修改后的完整项目)\Figure_And_File\PPO_HGAT\Param_Experiment\joint4000"
+RESULTS = r"D:\360MoveData\Users\lenovo\Desktop\撰写的论文\MOFJSP(修改后的完整项目)\Figure_And_File\HGHRL\Param_Experiment\joint4000"
 os.makedirs(RESULTS, exist_ok=True)
 
 jobs = []

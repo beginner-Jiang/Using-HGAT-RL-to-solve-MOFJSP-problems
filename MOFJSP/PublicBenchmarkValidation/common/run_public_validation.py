@@ -148,8 +148,8 @@ def run_train(args) -> None:
     checkpoint_dir = code_data / "checkpoints" / CHECKPOINT_FAMILY.get(args.family, args.family)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     suffix = ("_" + args.tag) if args.tag else ""
-    best_path = checkpoint_dir / ("ppo_hgat_public_best%s.pth" % suffix)
-    last_path = checkpoint_dir / ("ppo_hgat_public_last%s.pth" % suffix)
+    best_path = checkpoint_dir / ("hghrl_public_best%s.pth" % suffix)
+    last_path = checkpoint_dir / ("hghrl_public_last%s.pth" % suffix)
     history_path = code_data / ("training_history_%s%s.json"
                                 % (args.family, ("_" + args.tag) if args.tag else ""))
 
@@ -269,7 +269,7 @@ def run_select(args) -> None:
     zero_path = code_data / ("zero_shot_test_%s.json" % args.family)
     history_path = code_data / ("training_history_%s%s.json"
                                 % (args.family, ("_" + args.tag) if args.tag else ""))
-    fine_best = checkpoint_dir / "ppo_hgat_public_best.pth"
+    fine_best = checkpoint_dir / "hghrl_public_best.pth"
     if zero_path.exists() and fine_best.exists():
         zero_score = float(json.loads(zero_path.read_text(encoding="utf-8"))["validation_score"])
         fine_score = float("inf")
@@ -336,7 +336,7 @@ def run_evaluate(args) -> None:
 
     checkpoint = args.checkpoint
     checkpoint_family = CHECKPOINT_FAMILY.get(args.family, args.family)
-    public_best = code_data / "checkpoints" / checkpoint_family / "ppo_hgat_public_best.pth"
+    public_best = code_data / "checkpoints" / checkpoint_family / "hghrl_public_best.pth"
     selection = ba.selection_map(code_data, checkpoint_family)
     if selection.get("Proposed-policy") and Path(selection["Proposed-policy"]).exists():
         checkpoint = Path(selection["Proposed-policy"])
@@ -487,7 +487,7 @@ def main() -> None:
     parser.add_argument("--use-finetuned", action="store_true", default=True)
     args = parser.parse_args()
     if args.checkpoint is None:
-        args.checkpoint = args.project_root / "model" / "ppo_hgat" / "ppo_hgat_best.pth"
+        args.checkpoint = args.project_root / "model" / "hghrl" / "hghrl_best.pth"
 
     random.seed(args.seed)
     np.random.seed(args.seed)

@@ -6,7 +6,7 @@ reports success but the layer stays empty), so this composite is produced direct
 figure.  The style matches the single-panel drafts: medium blue, Times New Roman, no chart
 junk, legends without frames.
 
-Usage:  python PPO_HGAT/Time_Space_Complexity_Analysis/complexity_two_panel.py
+Usage:  python HGHRL/Time_Space_Complexity_Analysis/complexity_two_panel.py
 """
 import csv
 import os
@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT = os.path.join(ROOT, "Figure_And_File", "PPO_HGAT", "Time_Space_Complexity_Analysis")
+OUT = os.path.join(ROOT, "Figure_And_File", "HGHRL", "Time_Space_Complexity_Analysis")
 VAR = OUT
 SRC = os.path.join(OUT, "runtime_scaling_data.csv")
 BLUE = "#2E6FBA"

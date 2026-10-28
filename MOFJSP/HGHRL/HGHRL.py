@@ -1,5 +1,5 @@
 """
-PPO_HGAT Training Program
+HGHRL Training Program
 Fully implements PPO (using KL divergence, combined with hierarchical reinforcement learning) + HGAT (heterogeneous graph)
 After training, plots the normalized curves of three objectives (Cmax, Load Balance, Tardy), KL divergence, and total loss variation trends
 """
@@ -60,12 +60,12 @@ if torch.cuda.is_available():
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTANCE_DIR = os.path.join(_PROJECT_ROOT, "DataSet", "mo_fjsp_instances")
 FILE_PATTERN = "mo_fjsp_*_train.txt"
-MODEL_DIR = os.path.join(_PROJECT_ROOT, "model", "ppo_hgat")
-MODEL_NAME = "ppo_hgat_best.pth"
+MODEL_DIR = os.path.join(_PROJECT_ROOT, "model", "hghrl")
+MODEL_NAME = "hghrl_best.pth"
 # Tag of the hyper-parameter recipe of this generation.  Every checkpoint records it, and a resumed
 # run adopts the schedule and the KL penalty of a checkpoint only when the checkpoint belongs to the
 RECIPE_TAG = "hetero-state-2026-10-17-legacy3"
-TRAIN_FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "PPO_HGAT",
+TRAIN_FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "HGHRL",
                                 "Train")
 
 torch.backends.cudnn.benchmark = True
@@ -79,7 +79,7 @@ class Config:
     # Rolling checkpoint of an interrupted run: it also carries the optimiser
     # state and the episode counter, so that a restart continues instead of
     # starting from the first episode again.
-    resume_name = 'ppo_hgat_last.pth'
+    resume_name = 'hghrl_last.pth'
     checkpoint_interval = 100
     # Peak step size of the policy update.  The wave of the previous generation used 1e-3 and the
     # policy collapsed after its early checks (the relative validation objective doubled and the

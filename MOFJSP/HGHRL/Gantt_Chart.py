@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Publication-quality Gantt chart of the trained HGAT+PPO model.
+"""Publication-quality Gantt chart of the trained HGHRL model.
 
-The canonical environment and networks of PPO_HGAT.PPO_HGAT are reused, so the node features,
+The canonical environment and networks of HGHRL.HGHRL are reused, so the node features,
 the disjunctive edges and the decoding protocol are identical to the selected checkpoint.
 The feature width is read from the checkpoint (3, 5 or 7 operation columns), hence the script
 works with the legacy 3/3 model, the intermediate 5/3 model and the current 7/4 model.
@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from PPO_HGAT import (
+from HGHRL import (
     MOFJSPInstance, HeteroGraphEnv, HeteroGAT, UpperPolicy, LowerPolicy,
     load_all_instances, read_fjsp_instance, cfg as HGAT_CFG,
 )
@@ -46,8 +46,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-8
 W1, W2, W3 = 0.4, 0.3, 0.3
 DEFAULT_INSTANCE = os.path.join(ROOT, "DataSet", "comparison_instances", "comp_large_100x30_081.txt")
-DEFAULT_MODEL = os.path.join(ROOT, "model", "ppo_hgat", "ppo_hgat_best.pth")
-DEFAULT_OUTPUT = os.path.join(ROOT, "Figure_And_File", "PPO_HGAT", "Gantt_Chart", "gantt_chart_100x30.png")
+DEFAULT_MODEL = os.path.join(ROOT, "model", "hghrl", "hghrl_best.pth")
+DEFAULT_OUTPUT = os.path.join(ROOT, "Figure_And_File", "HGHRL", "Gantt_Chart", "gantt_chart_100x30.png")
 
 PAPER_COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B3",
                 "#937860", "#DA8BC3", "#8C8C8C", "#CCB974", "#64B5CD"]
@@ -373,7 +373,7 @@ def _plot_gantt_legacy(env, records, metrics, validation, candidates, save_path,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Gantt chart of the trained HGAT+PPO model")
+    parser = argparse.ArgumentParser(description="Gantt chart of the trained HGHRL model")
     parser.add_argument("--instance", default=DEFAULT_INSTANCE)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)

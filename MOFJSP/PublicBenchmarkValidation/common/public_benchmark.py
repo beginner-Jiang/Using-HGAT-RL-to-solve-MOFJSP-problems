@@ -421,7 +421,7 @@ def evaluate_rules(instances: Sequence[BenchInstance]) -> Dict[str, Dict[str, fl
 # ---------------------------------------------------------------------------
 
 def _import_param(project_root: Path):
-    param_dir = project_root / "PPO_HGAT" / "Param_Experiment"
+    param_dir = project_root / "HGHRL" / "Param_Experiment"
     if str(param_dir) not in sys.path:
         sys.path.insert(0, str(param_dir))
     import Param  # type: ignore
@@ -715,7 +715,7 @@ def make_figures(per_instance: Sequence[dict], stats: dict, figure_dir: Path) ->
     }
     methods = list(RULES) + list(LEARNING_BASELINES) + [
         "Proposed-policy", "Proposed-hybrid"]
-    labels = {"Proposed-policy": "HGAT+PPO", "Proposed-hybrid": "HGAT+PPO"}
+    labels = {"Proposed-policy": "HGHRL", "Proposed-hybrid": "HGHRL"}
     output = []
 
     # Figure 1: gap to BKS by family.
@@ -782,7 +782,7 @@ def make_figures(per_instance: Sequence[dict], stats: dict, figure_dir: Path) ->
                edgecolor="#333333", linewidth=0.6, label=category, width=0.55)
         bottoms += values
     ax.set_ylabel("Number of instances")
-    ax.set_title("HGAT+PPO against the best rule", pad=6)
+    ax.set_title("HGHRL against the best rule", pad=6)
     ax.legend(frameon=False, ncol=3, loc="upper center")
     _style_axes(ax)
     fig.tight_layout()
@@ -938,7 +938,7 @@ def project_root_from_script() -> Path:
     here = Path(__file__).resolve().parent
     if here.name == "common":
         return here.parent.parent
-    return here.parent.parent if here.parent.name == "PPO_HGAT" else here.parent
+    return here.parent.parent if here.parent.name == "HGHRL" else here.parent
 
 
 def main() -> None:

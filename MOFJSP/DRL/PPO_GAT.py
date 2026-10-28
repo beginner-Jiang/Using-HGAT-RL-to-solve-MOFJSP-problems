@@ -97,11 +97,11 @@ class Config:
     lr_decay_steps = 2000
     min_lr = 1e-5
     gamma = 0.99
-    # Undiscounted return, see the note in PPO_HGAT.py: the objective of an instance is only
+    # Undiscounted return, see the note in HGHRL.py: the objective of an instance is only
     # complete at the end of its schedule, and at gamma 0.99 the terminal signal of a 400 decision
     gamma = 1.0
     gae_lambda = 0.95
-    # Monte-Carlo advantage, see the note in PPO_HGAT.py: a window of twenty steps cannot carry the
+    # Monte-Carlo advantage, see the note in HGHRL.py: a window of twenty steps cannot carry the
     # terminal objective of a 400 step episode, which is the objective this baseline never moved.
     gae_lambda = 1.0
     kl_target = 0.1                  # KL target of the family

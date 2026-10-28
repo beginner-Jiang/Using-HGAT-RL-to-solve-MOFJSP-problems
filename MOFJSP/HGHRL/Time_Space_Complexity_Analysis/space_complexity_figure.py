@@ -5,7 +5,7 @@ Panel (a): peak tensor memory attributable to the graph (measured peak minus the
 scale) against the number of edges E, log-log.  Panel (b): measured edge count E against the
 problem size N, together with the normalised N^2 A^2 / M reference from the derivation.
 
-Usage:  python PPO_HGAT/Time_Space_Complexity_Analysis/space_complexity_figure.py
+Usage:  python HGHRL/Time_Space_Complexity_Analysis/space_complexity_figure.py
 """
 import csv
 import glob
@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT = os.path.join(ROOT, "Figure_And_File", "PPO_HGAT", "Time_Space_Complexity_Analysis")
+OUT = os.path.join(ROOT, "Figure_And_File", "HGHRL", "Time_Space_Complexity_Analysis")
 SRC = os.path.join(OUT, "space_scaling_data.csv")
 BLUE = "#2E6FBA"
 GRAY = "#8C8C8C"

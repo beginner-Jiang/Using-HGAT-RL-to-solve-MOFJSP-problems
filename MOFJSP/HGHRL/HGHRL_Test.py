@@ -1,7 +1,6 @@
 """
-PPO_HGAT Scheduling Result Visualization Program (Randomly Generated Fixed-Scale Instance)
-Generates a random FJSP instance with 100 jobs × 30 machines,
-uses the trained best model for scheduling, and draws a Gantt chart
+HGHRL Test Program
+Loads the trained best model, runs scheduling on test set instances, and computes test metrics
 """
 
 import torch
@@ -10,38 +9,25 @@ import torch.nn.functional as F
 import numpy as np
 import random
 import os
+import glob
+import time
 import warnings
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+import argparse
+import sys
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
-
-# Set matplotlib global parameters
-plt.rcParams['font.family'] = 'Times New Roman'
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.titlesize'] = 20
-plt.rcParams['axes.labelsize'] = 16
-plt.rcParams['xtick.labelsize'] = 12
-plt.rcParams['ytick.labelsize'] = 12
-plt.rcParams['legend.fontsize'] = 10
-plt.rcParams['legend.title_fontsize'] = 12
-plt.rcParams['figure.dpi'] = 300
-
-# Custom grid style
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.3
-plt.rcParams['grid.linestyle'] = '--'
+import re
 
 # Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
 
-# Multi-objective weights (must match training)
+# Objective function weights (consistent with training)
 W1 = 0.4
 W2 = 0.3
 W3 = 0.3
 
-# Fixed random seed to ensure consistent instance generation
+# Random seed
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -49,48 +35,99 @@ torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
-MODEL_DIR = "../model/ppo_hgat"
-MODEL_NAME = "ppo_hgat_best.pth"
+# Default paths
+DEFAULT_INSTANCE_DIR = "../DataSet/mo_fjsp_instances"
+DEFAULT_TEST_PATTERN = "mo_fjsp_*_test.txt"
+DEFAULT_MODEL_DIR = "../model/hghrl"
+DEFAULT_MODEL_NAME = "hghrl_best.pth"
+DEFAULT_REWARD_SCALING = 50.0
+DEFAULT_REWARD_CLIP = 10.0
 
-# Reward scaling coefficients (consistent with training)
-REWARD_SCALING = 5.0
-REWARD_CLIP = 2.0
 
-# Fixed instance scale
-N_JOBS = 100
-N_MACHINES = 30
+# Data reading and instance definition (consistent with training)
+def parse_size_from_filename(filename: str) -> str:
+    match = re.search(r'(small|medium|large)', filename)
+    return match.group(1) if match else "unknown"
 
-# Data class definition (consistent with training)
+
 @dataclass
 class Operation:
     job_id: int
     op_id: int
     machine_times: Dict[int, float]
 
-def generate_random_instance(n_jobs: int, n_machines: int) -> Tuple[List[List[Operation]], List[int], List[float]]:
-    """
-    Generate a random FJSP instance.
-    Returns (jobs, machine_capabilities, due_dates)
-    """
+
+def read_fjsp_instance(file_path: str):
+    """Reads an FJSP instance file, returns job list, machine capabilities list, due dates list, filename, and size"""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    num_jobs, num_machines = map(int, lines[0].split())
+    job_lines = lines[1:1 + num_jobs]
+    due_dates_line = lines[-2]
+    capabilities_line = lines[-1]
+    due_dates = list(map(float, due_dates_line.split()))
+    machine_capabilities = list(map(int, capabilities_line.split()))
+
+    if len(due_dates) != num_jobs:
+        print(f"Warning: number of due dates ({len(due_dates)}) does not match number of jobs ({num_jobs})")
+    if len(machine_capabilities) != num_machines:
+        print(f"Warning: number of machine capabilities ({len(machine_capabilities)}) does not match number of machines ({num_machines})")
+
     jobs = []
-    machine_capabilities = [random.randint(1, 5) for _ in range(n_machines)]
-    due_dates = [random.uniform(100, 500) for _ in range(n_jobs)]
-
-    for job_id in range(n_jobs):
-        n_ops = random.randint(1, 10)
+    for job_idx in range(num_jobs):
+        nums = list(map(int, job_lines[job_idx].split()))
+        num_ops = nums[0]
+        idx = 1
         job_ops = []
-        for op_id in range(n_ops):
-            n_choices = random.randint(1, min(5, n_machines))
-            machines = random.sample(range(n_machines), n_choices)
+        for op_idx in range(num_ops):
+            k = nums[idx]
+            idx += 1
             machine_times = {}
-            for m in machines:
-                p_time = random.uniform(1, 50)
-                machine_times[m] = p_time
-            job_ops.append(Operation(job_id, op_id, machine_times))
+            for _ in range(k):
+                m_id = nums[idx] - 1
+                p_time = float(nums[idx + 1])
+                machine_times[m_id] = p_time
+                idx += 2
+            job_ops.append(Operation(job_idx, op_idx, machine_times))
         jobs.append(job_ops)
-    return jobs, machine_capabilities, due_dates
 
-# ---------------------------- Instance class (exactly consistent with training) ----------------------------
+    file_name = os.path.basename(file_path)
+    size = parse_size_from_filename(file_name)
+    return jobs, machine_capabilities, due_dates, file_name, size
+
+
+def load_all_instances(instance_dir: str, pattern: str):
+    """Loads all matching instances and returns the instance list and global maximums (including machine capability)"""
+    file_paths = glob.glob(os.path.join(instance_dir, pattern))
+    if not file_paths:
+        raise FileNotFoundError(f"No files matching {pattern} found in directory {instance_dir}")
+
+    instance_list = []
+    max_jobs = 0
+    max_machines = 0
+    max_proc_time = 0
+    max_due_date = 0
+    max_total_ops = 0
+    max_capability = 0
+
+    for fp in file_paths:
+        jobs, caps, due_dates, fname, size = read_fjsp_instance(fp)
+        total_ops = sum(len(j) for j in jobs)
+        instance_list.append((jobs, caps, due_dates, fname, size))
+        max_jobs = max(max_jobs, len(jobs))
+        max_machines = max(max_machines, len(caps))
+        for job_ops in jobs:
+            for op in job_ops:
+                for t in op.machine_times.values():
+                    max_proc_time = max(max_proc_time, t)
+        max_due_date = max(max_due_date, max(due_dates) if due_dates else 0)
+        max_total_ops = max(max_total_ops, total_ops)
+        if caps:
+            max_capability = max(max_capability, max(caps))
+
+    return instance_list, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability
+
+
 class MOFJSPInstance:
     def __init__(self, jobs, machine_capabilities, due_dates, file_name, size,
                  global_max_proc_time, global_max_capability):
@@ -108,7 +145,6 @@ class MOFJSPInstance:
 
         self.proc_time_matrix = torch.full((self.total_ops, self.n_machines), 99999.0, dtype=torch.float32, device=DEVICE)
 
-        total_assignments = 0
         for j_idx, job in enumerate(jobs):
             for op in job:
                 key = (j_idx, op.op_id)
@@ -116,13 +152,10 @@ class MOFJSPInstance:
                 for m, t in op.machine_times.items():
                     self.processing_times[(j_idx, op.op_id, m)] = t
                     self.available_machines[key].append(m)
-                    total_assignments += 1
 
         all_times = list(self.processing_times.values())
         self.max_proc_time = max(all_times) if all_times else 1.0
         self.mean_proc_time = np.mean(all_times) if all_times else 1.0
-
-        self.avg_flex = total_assignments / (self.total_ops * self.n_machines) if self.total_ops > 0 else 0.0
 
         self.op_index_map = {}
         op_idx = 0
@@ -162,6 +195,7 @@ class MOFJSPInstance:
         self.due_dates_tensor = torch.tensor(due_dates, dtype=torch.float32, device=DEVICE)
         self.ops_per_job_tensor = torch.tensor(self.ops_per_job, dtype=torch.long, device=DEVICE)
 
+        # Capability feature normalization
         self.capability_tensor = torch.tensor(machine_capabilities, dtype=torch.float32, device=DEVICE)
         if global_max_capability > 0:
             self.capability_tensor = self.capability_tensor / global_max_capability
@@ -206,26 +240,29 @@ class MOFJSPInstance:
     def get_pt(self, job, op, machine):
         return self.proc_time_matrix[self.op_index_map[(job, op)], machine].item()
 
-# Environment class (consistent with training, with scheduling recording)
+
+# Environment class (consistent with training)
 class HeteroGraphEnv:
     def __init__(self, instance: MOFJSPInstance, global_max_jobs, global_max_ops, global_max_machines,
-                 global_max_proc_time, global_max_due_date, cfg):
+                 global_max_proc_time, global_max_due_date, global_max_capability, cfg):
         self.inst = instance
         self.global_max_jobs = global_max_jobs
         self.global_max_ops = global_max_ops
         self.global_max_machines = global_max_machines
         self.global_max_proc_time = global_max_proc_time
         self.global_max_due_date = global_max_due_date
+        self.global_max_capability = global_max_capability
         self.cfg = cfg
 
         self.global_max_proc_time_tensor = torch.tensor(global_max_proc_time, device=DEVICE)
         self.global_max_due_date_tensor = torch.tensor(global_max_due_date, device=DEVICE)
+        self.global_max_capability_tensor = torch.tensor(global_max_capability, device=DEVICE)
 
         self.total_op_nodes = instance.total_ops
         self.total_machine_nodes = instance.n_machines
 
         self.op_feat_dim = 3
-        self.mac_feat_dim = 3                     # Includes capability dimension
+        self.mac_feat_dim = 3  # Consistent with training: load, available time, capability
 
         self.op_predecessor = instance.op_predecessor
         self.job_op_to_idx = instance.job_op_to_idx
@@ -256,16 +293,15 @@ class HeteroGraphEnv:
                 job_id_norm = job / max(1, global_max_jobs - 1)
                 self.static_op_feats[node_idx, :] = torch.tensor([step_idx, due_time, job_id_norm], device=DEVICE)
 
-        # Static machine features: first two dimensions are dynamic, third is normalized capability
+        # Static machine features: capability (third dimension)
         self.static_mac_feats = torch.zeros((self.global_max_machines, self.mac_feat_dim), dtype=torch.float32, device=DEVICE)
         for m in range(instance.n_machines):
             self.static_mac_feats[m, 2] = instance.capability_tensor[m]
 
-        self.scheduled_ops = []  # For Gantt chart recording
         self.reset()
 
     def reset(self):
-        self.scheduled_ops = []  # Clear recording
+        self.scheduled_ops = []  # Optional, for Gantt charts
         self.machine_available_time = torch.zeros(self.inst.n_machines, dtype=torch.float32, device=DEVICE)
         self.machine_load = torch.zeros(self.inst.n_machines, dtype=torch.float32, device=DEVICE)
         self.job_next_op = torch.zeros(self.inst.n_jobs, dtype=torch.long, device=DEVICE)
@@ -291,28 +327,30 @@ class HeteroGraphEnv:
         start = torch.maximum(job_ready, machine_ready)
         end = start + p_time
 
-        # Record schedule (for Gantt chart)
+        # Record schedule (optional)
         self.scheduled_ops.append((job.item(), op.item(), machine.item(), start.item(), end.item()))
 
+        # The load-balance variation ΔLB_t must be the difference of the load standard deviation
+        # between "before and after this assignment": record the standard deviation before the assignment, update the machine loads and take the standard deviation afterwards; the original implementation accumulated
+        # p_time and then accumulated p_time again on the same machine, which is not the load change caused by this assignment (fixed to a single-step difference).
+        old_LB = torch.std(self.machine_load)
         self.machine_available_time[machine.long()] = end
         self.machine_load[machine.long()] += p_time
+        new_LB = torch.std(self.machine_load)
+        delta_LB = new_LB - old_LB
         self.job_next_op[job.long()] = self.job_next_op[job.long()] + 1
         self.job_completion_time[job.long()] = torch.maximum(self.job_completion_time[job.long()], end)
         self.current_time = torch.maximum(self.current_time, end)
         self.op_finish_time[op_idx] = end
         self.op_scheduled[op_idx] = True
 
-        old_LB = torch.std(self.machine_load)
-        temp_load = self.machine_load.clone()
-        temp_load[machine.long()] += p_time
-        new_LB = torch.std(temp_load)
-        delta_LB = new_LB - old_LB
-
         norm_p = p_time / self.global_max_proc_time_tensor
         due = self.due_dates_tensor[job.long()]
         t_c = self.current_time
         n_i = self.ops_per_job_tensor[job.long()]
-        u_ij = torch.clamp(due - t_c, min=0) / (self.global_max_due_date_tensor * n_i + EPS)
+        # Operation urgency: zero while the operation finishes before its due date and
+        # proportional to the lateness once the due date is exceeded. Using the lateness
+        u_ij = torch.clamp(end - due, min=0) / (self.global_max_due_date_tensor * n_i + EPS)
 
         reward = - (W1 * norm_p + W2 * delta_LB / self.global_max_proc_time_tensor + W3 * u_ij)
         reward /= self.cfg.reward_scaling
@@ -337,9 +375,9 @@ class HeteroGraphEnv:
         total_load = self.machine_load.sum()
         load_norm = self.machine_load / (total_load + EPS)
         avail_norm = self.machine_available_time / (self.current_time + 1.0 + EPS)
-        # Update dynamic part, capability remains unchanged
         self.mac_feats_t[:self.inst.n_machines, 0] = load_norm
         self.mac_feats_t[:self.inst.n_machines, 1] = avail_norm
+        # Third dimension (capability) remains static
 
         unsched_mask = ~self.op_scheduled
 
@@ -385,20 +423,22 @@ class HeteroGraphEnv:
             op_mask[avail_op_indices] = 1.0
 
         return {
-            'op_feats': self.op_feats_t,
-            'mac_feats': self.mac_feats_t,
+            'op_feats': self.op_feats_t.clone(),  # in-place updated tensors must be copied, otherwise later steps overwrite the trajectory state
+            'mac_feats': self.mac_feats_t.clone(),  # in-place updated tensors must be copied, otherwise later steps overwrite the trajectory state
             'edges': edges_t,
             'edge_feats': edge_feats_t,
             'op_mask': op_mask,
         }
 
-# ---------------------------- Network definitions (consistent with training) ----------------------------
+
+# Network definitions (consistent with training)
 def orthogonal_init(layer, gain=1.0):
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain=gain)
         if layer.bias is not None:
             nn.init.constant_(layer.bias, 0)
     return layer
+
 
 class HeteroGATLayer(nn.Module):
     def __init__(self, in_dim_op, in_dim_mac, out_dim, num_heads=4):
@@ -469,6 +509,7 @@ class HeteroGATLayer(nn.Module):
         res_mac = (out_mac.flatten(1) + self.W_mac(h_mac))
         return F.elu(res_op), F.elu(res_mac)
 
+
 class HeteroGAT(nn.Module):
     def __init__(self, dim_op, dim_mac, hidden_dim, out_dim):
         super().__init__()
@@ -487,6 +528,7 @@ class HeteroGAT(nn.Module):
 
         return h_op2, h_mac2
 
+
 class UpperPolicy(nn.Module):
     def __init__(self, emb_dim, hidden_dim):
         super().__init__()
@@ -503,7 +545,7 @@ class UpperPolicy(nn.Module):
             cat = torch.cat([g_rep, op_embs], dim=1)
             logits = self.net(cat).squeeze(-1)
             if mask is not None:
-                logits = logits.masked_fill(mask == 0, torch.finfo(logits.dtype).min)
+                logits = logits.masked_fill(mask == 0, -1e10)
             probs = F.softmax(logits, dim=0)
         else:
             batch_size, N, _ = op_embs.shape
@@ -511,9 +553,10 @@ class UpperPolicy(nn.Module):
             cat = torch.cat([g_rep, op_embs], dim=2)
             logits = self.net(cat).squeeze(-1)
             if mask is not None:
-                logits = logits.masked_fill(mask == 0, torch.finfo(logits.dtype).min)
+                logits = logits.masked_fill(mask == 0, -1e10)
             probs = F.softmax(logits, dim=1)
         return probs
+
 
 class LowerPolicy(nn.Module):
     def __init__(self, emb_dim, hidden_dim):
@@ -532,7 +575,7 @@ class LowerPolicy(nn.Module):
             cat = torch.cat([g_rep, op_rep, mac_embs], dim=1)
             logits = self.net(cat).squeeze(-1)
             if mask is not None:
-                logits = logits.masked_fill(mask == 0, torch.finfo(logits.dtype).min)
+                logits = logits.masked_fill(mask == 0, -1e10)
             probs = F.softmax(logits, dim=0)
         else:
             batch_size, M, _ = mac_embs.shape
@@ -541,9 +584,10 @@ class LowerPolicy(nn.Module):
             cat = torch.cat([g_rep, op_rep, mac_embs], dim=2)
             logits = self.net(cat).squeeze(-1)
             if mask is not None:
-                logits = logits.masked_fill(mask == 0, torch.finfo(logits.dtype).min)
+                logits = logits.masked_fill(mask == 0, -1e10)
             probs = F.softmax(logits, dim=1)
         return probs
+
 
 class Critic(nn.Module):
     def __init__(self, emb_dim, hidden_dim):
@@ -555,6 +599,7 @@ class Critic(nn.Module):
         )
     def forward(self, g_emb):
         return self.net(g_emb)
+
 
 class TorchRunningMeanStd:
     def __init__(self, shape=(), epsilon=1e-4, device=DEVICE):
@@ -586,14 +631,10 @@ class TorchRunningMeanStd:
     def normalize(self, x):
         return (x - self.mean) / (self.var.sqrt() + 1e-8)
 
-    def load_state_dict(self, state_dict):
-        self.mean = state_dict['mean'].to(self.device)
-        self.var = state_dict['var'].to(self.device)
-        self.count = state_dict['count']
 
 # PPO Agent
 class HierarchicalPPOAgent:
-    def __init__(self, inst, gat, upper, lower, critic_u, critic_l, state_norm=None):
+    def __init__(self, inst, gat, upper, lower, critic_u, critic_l, state_norm=None, gamma=0.99, lam=0.95, clip=0.2, beta=0.01, lr=3e-4):
         self.inst = inst
         self.gat = gat
         self.upper = upper
@@ -601,11 +642,20 @@ class HierarchicalPPOAgent:
         self.critic_u = critic_u
         self.critic_l = critic_l
         self.state_norm = state_norm
+        self.gamma = gamma
+        self.lam = lam
+        self.clip = clip
+        self.beta = beta
+        self.lr = lr
+        self.params = list(gat.parameters()) + list(upper.parameters()) + \
+                      list(lower.parameters()) + list(critic_u.parameters()) + list(critic_l.parameters())
+        self.opt = torch.optim.Adam(self.params, lr=lr)
 
     def load(self, path):
         if os.path.exists(path):
-            # Ignore FutureWarning, temporarily use weights_only=False
-            checkpoint = torch.load(path, map_location=DEVICE, weights_only=False)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                checkpoint = torch.load(path, map_location=DEVICE)
             self.gat.load_state_dict(checkpoint['gat'])
             self.upper.load_state_dict(checkpoint['upper'])
             self.lower.load_state_dict(checkpoint['lower'])
@@ -617,7 +667,13 @@ class HierarchicalPPOAgent:
             self.lower = self.lower.float()
             self.critic_u = self.critic_u.float()
             self.critic_l = self.critic_l.float()
-            print(f"Model loaded from {path} and converted to float32")
+            # Recreate optimizer (optional, not needed for inference)
+            self.params = list(self.gat.parameters()) + list(self.upper.parameters()) + \
+                          list(self.lower.parameters()) + list(self.critic_u.parameters()) + list(self.critic_l.parameters())
+            self.opt = torch.optim.Adam(self.params, lr=self.lr)
+            self.gamma = checkpoint.get('gamma', 0.99)
+            self.beta = checkpoint.get('beta', 0.01)
+            print(f"Model loaded from {path} and converted to float32, gamma={self.gamma:.3f}, beta={self.beta:.3f}")
             return True
         else:
             print(f"Model file {path} not found")
@@ -660,169 +716,181 @@ class HierarchicalPPOAgent:
 
         return (job, op, machine)
 
-# Gantt chart drawing (modified: machine numbers start from 1)
-def plot_gantt(env, save_path=None):
-    """
-    Plot a publication-quality Gantt chart from the environment's scheduled operations.
-    No title, no legend. Y-axis labeled as Machine1, Machine2, ... with enlarged font.
-    X-axis labeled as Makespan.
-    """
-    if not hasattr(env, 'scheduled_ops') or not env.scheduled_ops:
-        print("No scheduled operations found, cannot plot Gantt chart.")
-        return
 
-    scheduled_ops = env.scheduled_ops
-    num_machines = env.inst.n_machines
-    num_jobs = env.inst.n_jobs
-
-    # Generate soft colors (HSV space, fixed saturation and value)
-    def get_soft_colors(n):
-        colors = []
-        for i in range(n):
-            hue = i / n
-            # Moderate saturation and value for soft colors
-            rgb = mcolors.hsv_to_rgb([hue, 0.6, 0.9])
-            colors.append(rgb)
-        return colors
-
-    job_colors_list = get_soft_colors(num_jobs)
-    job_colors = {job: job_colors_list[job] for job in range(num_jobs)}
-
-    # Create figure with appropriate size
-    fig, ax = plt.subplots(figsize=(24, 16), dpi=300)
-
-    # Draw bars for each operation
-    for (job, op, machine, start, end) in scheduled_ops:
-        ax.barh(y=machine, width=end-start, left=start, height=0.8,
-                color=job_colors[job], edgecolor='black', linewidth=0.2, alpha=0.9)
-
-    # Set axis labels
-    ax.set_xlabel('Makespan', fontsize=20, fontweight='bold')
-    # Set y-axis tick labels as Machine1, Machine2, ... with font size matching x-axis title
-    ax.set_yticks(range(num_machines))
-    ax.set_yticklabels([f'Machine{m+1}' for m in range(num_machines)], fontsize=20)  # Modification: m+1
-    # Enlarge x-axis tick labels
-    ax.tick_params(axis='x', labelsize=16)
-
-    # Add grid lines (vertical only)
-    ax.grid(axis='x', linestyle='--', alpha=0.5, linewidth=0.5)
-
-    # Adjust layout
-    plt.subplots_adjust(right=0.95)
-
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Gantt chart saved to {save_path}")
-    plt.show()
-
-# Main program
-def main():
-    print("=" * 50)
-    print("Generating random FJSP instance (100 jobs × 30 machines)")
-    print("=" * 50)
-
-    # 1. Generate random instance
-    jobs, machine_capabilities, due_dates = generate_random_instance(N_JOBS, N_MACHINES)
-
-    # Compute global maximums (for normalization)
-    all_times = []
-    for job_ops in jobs:
-        for op in job_ops:
-            all_times.extend(op.machine_times.values())
-    global_max_proc_time = max(all_times) if all_times else 1.0
-    global_max_capability = max(machine_capabilities) if machine_capabilities else 1.0
-    global_max_due_date = max(due_dates) if due_dates else 1.0
-    global_max_jobs = N_JOBS
-    global_max_ops = sum(len(j) for j in jobs)
-    global_max_machines = N_MACHINES
-
-    # 2. Build instance object
-    instance = MOFJSPInstance(
-        jobs=jobs,
-        machine_capabilities=machine_capabilities,
-        due_dates=due_dates,
-        file_name="random_100x30",
-        size="large",
-        global_max_proc_time=global_max_proc_time,
-        global_max_capability=global_max_capability
-    )
-    print(f"Instance generated: Jobs={instance.n_jobs}, Machines={instance.n_machines}, Total operations={instance.total_ops}")
-
-    # 3. Initialize networks (dimensions consistent with training)
-    dim_op = 3
-    dim_mac = 3
-    gat_hidden = 256          # GAT hidden layer dimension
-    gat_out = 256             # GAT output dimension
-    policy_hidden = 512       # Policy network hidden layer dimension
-
-    gat = HeteroGAT(dim_op, dim_mac, gat_hidden, gat_out).to(DEVICE)
-    upper = UpperPolicy(gat_out, policy_hidden).to(DEVICE)
-    lower = LowerPolicy(gat_out, policy_hidden).to(DEVICE)
-    critic_u = Critic(gat_out, policy_hidden).to(DEVICE)
-    critic_l = Critic(gat_out, policy_hidden).to(DEVICE)
-
-    # 4. Load normalization statistics if they exist
-    norm_path = os.path.join(MODEL_DIR, "state_norm.pt")
-    if os.path.exists(norm_path):
-        state_norm = TorchRunningMeanStd(shape=(gat_out,), device=DEVICE)
-        norm_state = torch.load(norm_path, map_location=DEVICE)
-        state_norm.load_state_dict(norm_state)
-        print("Loaded state normalization statistics.")
-    else:
-        state_norm = None
-        print("State normalization file not found, proceeding without normalization.")
-
-    # 5. Create Agent and load model
-    agent = HierarchicalPPOAgent(instance, gat, upper, lower, critic_u, critic_l, state_norm)
-    model_path = os.path.join(MODEL_DIR, MODEL_NAME)
-    if not agent.load(model_path):
-        print("Failed to load model, check the path.")
-        return
-
-    # 6. Create environment configuration
-    class DummyConfig:
-        reward_scaling = REWARD_SCALING
-        reward_clip = REWARD_CLIP
-        use_disjunctive_edges = False
-    cfg = DummyConfig()
-
-    # 7. Run scheduling (deterministic policy)
-    env = HeteroGraphEnv(
-        instance,
-        global_max_jobs=global_max_jobs,
-        global_max_ops=global_max_ops,
-        global_max_machines=global_max_machines,
-        global_max_proc_time=global_max_proc_time,
-        global_max_due_date=global_max_due_date,
-        cfg=cfg
-    )
-    state = env.reset()
-    done = False
-    step = 0
-    while not done:
-        action = agent.get_action(state, deterministic=True)
-        next_state, _, done = env.step(action)
-        state = next_state
-        step += 1
-        if step > 20000:  # Prevent infinite loop
-            break
-
-    print(f"Scheduling completed, total steps: {step}")
-
-    # 8. Compute final metrics
+# Test helper functions
+def compute_final_objectives(env):
     Cmax = max(env.job_completion_time).item()
     LB = torch.std(env.machine_load).item() if env.machine_load.numel() > 0 else 0.0
-    tardy = torch.sum(torch.clamp(env.job_completion_time - env.due_dates_tensor, min=0)).item()
-    F = W1 * Cmax + W2 * LB + W3 * tardy
-    print(f"\nScheduling results:")
-    print(f"  Cmax   = {Cmax:.2f}")
-    print(f"  LB     = {LB:.4f}")
-    print(f"  Tardy  = {tardy:.2f}")
-    print(f"  F      = {F:.4f}")
+    tardy_sum = torch.sum(torch.clamp(env.job_completion_time - env.due_dates_tensor, min=0)).item()
+    F = W1 * Cmax + W2 * LB + W3 * tardy_sum
+    return Cmax, LB, tardy_sum, F
 
-    # 9. Draw Gantt chart
-    save_path = "../Figure_And_File/PPO_HGAT/Graph/gantt_chart_100x30.png"
-    plot_gantt(env, save_path=save_path)
+
+def run_episode(agent, env, deterministic=True):
+    state = env.reset()
+    done = False
+    start_time = time.time()
+    while not done:
+        action = agent.get_action(state, deterministic=deterministic)
+        next_state, _, done = env.step(action)
+        state = next_state
+    end_time = time.time()
+    elapsed = end_time - start_time
+    Cmax, LB, tardy, F = compute_final_objectives(env)
+    return {'Cmax': Cmax, 'LB': LB, 'tardy': tardy, 'F': F, 'time': elapsed}
+
+
+# Main test function (supports command line arguments)
+def main():
+    parser = argparse.ArgumentParser(description="HGHRL Model Test Script")
+    parser.add_argument('--instance_dir', type=str, default=DEFAULT_INSTANCE_DIR,
+                        help=f'Test instance directory (default: {DEFAULT_INSTANCE_DIR})')
+    parser.add_argument('--test_pattern', type=str, default=DEFAULT_TEST_PATTERN,
+                        help=f'Test file matching pattern (default: "{DEFAULT_TEST_PATTERN}")')
+    parser.add_argument('--model_dir', type=str, default=DEFAULT_MODEL_DIR,
+                        help=f'Model directory (default: {DEFAULT_MODEL_DIR})')
+    parser.add_argument('--model_name', type=str, default=DEFAULT_MODEL_NAME,
+                        help=f'Model file name (default: {DEFAULT_MODEL_NAME})')
+    parser.add_argument('--reward_scaling', type=float, default=DEFAULT_REWARD_SCALING,
+                        help=f'Reward scaling factor (default: {DEFAULT_REWARD_SCALING})')
+    parser.add_argument('--reward_clip', type=float, default=DEFAULT_REWARD_CLIP,
+                        help=f'Reward clipping threshold (default: {DEFAULT_REWARD_CLIP})')
+    parser.add_argument('--no_cuda', action='store_true', help='Force CPU usage')
+    args = parser.parse_args()
+
+    if args.no_cuda:
+        device = torch.device('cpu')
+    else:
+        device = DEVICE
+
+    print("=" * 50)
+    print("HGHRL Model Test")
+    print("=" * 50)
+    print(f"Using device: {device}")
+    print(f"Instance directory: {args.instance_dir}")
+    print(f"Model directory: {args.model_dir}")
+    print(f"Model file: {args.model_name}")
+
+    # Check if paths exist
+    if not os.path.isdir(args.instance_dir):
+        print(f"Error: Instance directory does not exist - {args.instance_dir}")
+        sys.exit(1)
+    if not os.path.isdir(args.model_dir):
+        print(f"Error: Model directory does not exist - {args.model_dir}")
+        sys.exit(1)
+    model_path = os.path.join(args.model_dir, args.model_name)
+    if not os.path.isfile(model_path):
+        print(f"Error: Model file does not exist - {model_path}")
+        sys.exit(1)
+
+    # Load test instances and get global maximums (including machine capability)
+    try:
+        all_instances, max_jobs, max_machines, max_total_ops, max_proc_time, max_due_date, max_capability = \
+            load_all_instances(args.instance_dir, args.test_pattern)
+    except FileNotFoundError as e:
+        print(e)
+        sys.exit(1)
+
+    print(f"\nGlobal max jobs: {max_jobs}")
+    print(f"Global max machines: {max_machines}")
+    print(f"Global max total operations: {max_total_ops}")
+    print(f"Global max processing time: {max_proc_time}")
+    print(f"Global max due date: {max_due_date}")
+    print(f"Global max machine capability: {max_capability}")
+
+    # Build instance objects
+    test_instances = []
+    for jobs, caps, dues, fname, size in all_instances:
+        inst = MOFJSPInstance(jobs, caps, dues, fname, size, max_proc_time, max_capability)
+        test_instances.append(inst)
+
+    print(f"\nLoaded {len(test_instances)} test instances:")
+    for inst in test_instances:
+        print(f"  {inst.file_name}")
+
+    # Match training model
+    dim_op = 3
+    dim_mac = 3
+    gat_hidden = 256
+    gat_out = 256
+    policy_hidden = 512
+
+    gat = HeteroGAT(dim_op, dim_mac, gat_hidden, gat_out).to(device)
+    upper = UpperPolicy(gat_out, policy_hidden).to(device)
+    lower = LowerPolicy(gat_out, policy_hidden).to(device)
+    critic_u = Critic(gat_out, policy_hidden).to(device)
+    critic_l = Critic(gat_out, policy_hidden).to(device)
+
+    # Load normalization statistics if they exist
+    norm_path = os.path.join(args.model_dir, "state_norm.pt")
+    if os.path.exists(norm_path):
+        state_norm = TorchRunningMeanStd(shape=(gat_out,), device=device)
+        norm_state = torch.load(norm_path, map_location=device)
+        state_norm.mean = norm_state['mean'].to(device)
+        state_norm.var = norm_state['var'].to(device)
+        state_norm.count = norm_state['count']
+        print("State normalization parameters loaded.")
+    else:
+        state_norm = None
+        print("State normalization file not found, skipping normalization.")
+
+    # Create Agent (for inference only)
+    dummy_inst = test_instances[0]  # Temporary instance, will be replaced after loading
+    agent = HierarchicalPPOAgent(dummy_inst, gat, upper, lower, critic_u, critic_l, state_norm=state_norm)
+
+    if not agent.load(model_path):
+        sys.exit(1)
+
+    # Create configuration object (for environment)
+    class DummyConfig:
+        def __init__(self, scaling, clip):
+            self.reward_scaling = scaling
+            self.reward_clip = clip
+            self.use_disjunctive_edges = False
+
+    cfg = DummyConfig(args.reward_scaling, args.reward_clip)
+
+    # Run tests
+    results = []
+    for idx, inst in enumerate(test_instances):
+        print(f"\nTesting instance {idx+1}/{len(test_instances)}: {inst.file_name}")
+        env = HeteroGraphEnv(inst, max_jobs, max_total_ops, max_machines,
+                             max_proc_time, max_due_date, max_capability, cfg)
+        agent.inst = inst  # Update current instance
+        res = run_episode(agent, env, deterministic=True)
+        results.append({
+            'file': inst.file_name,
+            'Cmax': res['Cmax'],
+            'LB': res['LB'],
+            'tardy': res['tardy'],
+            'F': res['F'],
+            'time': res['time']
+        })
+        print(f"  Cmax={res['Cmax']:.2f}, LB={res['LB']:.4f}, Tardy={res['tardy']:.2f}, F={res['F']:.4f}, Time={res['time']:.4f}s")
+
+    # Statistical results
+    F_values = [r['F'] for r in results]
+    F_min = min(F_values)
+    F_max = max(F_values)
+    F_mean = np.mean(F_values)
+    F_std = np.std(F_values, ddof=1)
+    time_mean = np.mean([r['time'] for r in results])
+
+    print("\n" + "=" * 50)
+    print("Test Results Summary")
+    print("=" * 50)
+    print(f"Number of test instances: {len(results)}")
+    print(f"Objective function value range: [{F_min:.4f}, {F_max:.4f}]")
+    print(f"Average objective function value F_mean: {F_mean:.4f}")
+    print(f"Objective function value standard deviation σ_F: {F_std:.4f}")
+    print(f"Average solving time t_mean: {time_mean:.4f} seconds")
+
+    print("\nDetailed results (per instance):")
+    print(f"{'File':<25} {'Cmax':<10} {'LB':<10} {'Tardy':<10} {'F':<10} {'Time(s)':<10}")
+    for r in results:
+        fname = r['file'][:23] + '...' if len(r['file']) > 23 else r['file']
+        print(f"{fname:<25} {r['Cmax']:<10.2f} {r['LB']:<10.4f} {r['tardy']:<10.2f} {r['F']:<10.4f} {r['time']:<10.4f}")
+
 
 if __name__ == "__main__":
     main()

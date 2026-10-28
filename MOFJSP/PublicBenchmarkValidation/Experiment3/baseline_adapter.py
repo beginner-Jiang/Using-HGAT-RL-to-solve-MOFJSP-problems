@@ -59,7 +59,7 @@ def import_baseline(project_root: Path, name: str):
     module.W1 = 1.0
     module.W2 = 0.0
     module.W3 = 0.0
-    base = importlib.import_module("PPO_HGAT.PPO_HGAT")
+    base = importlib.import_module("HGHRL.HGHRL")
     base.W1 = 1.0
     base.W2 = 0.0
     base.W3 = 0.0

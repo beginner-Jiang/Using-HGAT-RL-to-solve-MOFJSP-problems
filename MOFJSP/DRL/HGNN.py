@@ -7,7 +7,7 @@ vol. 19, no. 2, pp. 1600-1610, 2023.
 
 Fair-comparison notes:
   * the instance reader, the scheduling environment (``HeteroGraphEnv``) and the multi-objective
-    reward are reused verbatim from the proposed HGAT+PPO method (``PPO_HGAT.PPO_HGAT``), so all
+    reward are reused verbatim from the proposed HGHRL method (``HGHRL.HGHRL``), so all
     methods share the same state transition, the same evaluation protocol and the same objective
     weights;
   * the hierarchical policy of the proposed method is replaced by a **single-level policy** that
@@ -54,7 +54,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from PPO_HGAT.PPO_HGAT import (
+from HGHRL.HGHRL import (
     read_fjsp_instance,
     load_all_instances,
     MOFJSPInstance,

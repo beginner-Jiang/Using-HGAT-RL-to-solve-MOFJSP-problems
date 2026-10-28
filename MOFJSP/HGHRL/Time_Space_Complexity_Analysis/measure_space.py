@@ -6,7 +6,7 @@ node count V, the edge count E of the hetero-disjunctive graph at reset, the pea
 allocated during the rollout (torch.cuda.max_memory_allocated, which excludes the CUDA context
 and therefore isolates the graph and activation footprint) and the wall-clock time.
 
-Usage:  python PPO_HGAT/Time_Space_Complexity_Analysis/measure_space.py
+Usage:  python HGHRL/Time_Space_Complexity_Analysis/measure_space.py
 """
 import csv
 import gc
@@ -18,15 +18,15 @@ import torch
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, "PPO_HGAT"))
+sys.path.insert(0, os.path.join(ROOT, "HGHRL"))
 
 from Gantt_Chart import (  # noqa: E402
     GreedyDecoder, HGAT_CFG, MOFJSPInstance, load_model, load_training_globals, read_fjsp_instance,
 )
-from PPO_HGAT import HeteroGraphEnv  # noqa: E402
+from HGHRL import HeteroGraphEnv  # noqa: E402
 
-OUT = os.path.join(ROOT, "Figure_And_File", "PPO_HGAT", "Time_Space_Complexity_Analysis")
-MODEL = os.path.join(ROOT, "model", "ppo_hgat", "ppo_hgat_best.pth")
+OUT = os.path.join(ROOT, "Figure_And_File", "HGHRL", "Time_Space_Complexity_Analysis")
+MODEL = os.path.join(ROOT, "model", "hghrl", "hghrl_best.pth")
 SCALES = ("10x5", "15x10", "20x10", "25x15", "30x20", "40x20", "50x25", "75x25", "100x30")
 
 

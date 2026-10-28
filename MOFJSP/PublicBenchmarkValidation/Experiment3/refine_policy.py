@@ -104,7 +104,7 @@ def main() -> None:
     geometry = pb.benchmark_geometry(instances)
     selection = ba.selection_map(code_data, "Lawrence")
     checkpoint = Path(selection.get("Proposed-policy",
-                                    args.project_root / "model" / "ppo_hgat" / "ppo_hgat_best.pth"))
+                                    args.project_root / "model" / "hghrl" / "hghrl_best.pth"))
     print("== checkpoint: %s ==" % checkpoint, flush=True)
     Param, agent, cfg, _ = pb.load_adopted_agent(args.project_root, checkpoint)
     agent.gat.eval(); agent.upper.eval(); agent.lower.eval()

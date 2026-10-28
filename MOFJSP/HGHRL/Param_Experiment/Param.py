@@ -14,7 +14,7 @@ anchored on the values the earlier waves measured on this host (the discount of 
 penalty band of the current configuration, K=4), not on the values of the manuscript: the
 parameter selection and the reading of these curves follow the experiments of this round.
 The graph representation and the assignment score of this script have to be the ones of
-PPO_HGAT.PPO_HGAT (disjunctive edges with the per-machine cap, and the fixed-preference term of
+HGHRL.HGHRL (disjunctive edges with the per-machine cap, and the fixed-preference term of
 the lower policy), otherwise the curves measure a method that is not the one of the comparison.
 """
 
@@ -60,8 +60,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 # The figures and the tables of this scan belong to their own folder, named after this experiment
 # and sitting next to the one of the method whose parameters are scanned, so that neither the
 # comparison experiments nor the method folder can overwrite them.
-FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "PPO_HGAT", "Param_Experiment")
-os.makedirs(FIGURE_DIR, exist_ok=True)
+FIGURE_DIR = os.path.join(_PROJECT_ROOT, "Figure_And_File", "HGHRL", "Param_Experiment")
 
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
@@ -71,7 +70,7 @@ import re
 # Global configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
-# Overflow guard of the main run (PPO_HGAT.Config.logits_clip).  The policy logits of the
+# Overflow guard of the main run (HGHRL.Config.logits_clip).  The policy logits of the
 # manuscript are clamped to this range before the mask is written, so a scan of the
 LOGITS_CLIP = 50.0
 
@@ -88,8 +87,8 @@ if torch.cuda.is_available():
 
 INSTANCE_DIR = os.path.join(_PROJECT_ROOT, "DataSet", "mo_fjsp_instances")
 FILE_PATTERN = "mo_fjsp_*_train.txt"
-MODEL_DIR = os.path.join(_PROJECT_ROOT, "model", "ppo_hgat")
-BEST_MODEL_PATH = os.path.join(MODEL_DIR, "ppo_hgat_best.pth")
+MODEL_DIR = os.path.join(_PROJECT_ROOT, "model", "hghrl")
+BEST_MODEL_PATH = os.path.join(MODEL_DIR, "hghrl_best.pth")
 
 TRAIN_RATIO = 0.6
 VAL_RATIO = 0.2
@@ -200,7 +199,7 @@ def remember_row(param, value, entry):
 # selected.  A configuration is scored by the best of them, exactly as in that protocol.
 
 # Update passes over one collected trajectory.  The trainer of the method walks a collected
-# episode exactly once: update() of PPO_HGAT has a single loop over the chunks of the trajectory
+# episode exactly once: update() of HGHRL has a single loop over the chunks of the trajectory
 PPO_EPOCHS = 1
 EVAL_TEMPERATURE = 1.0
 EVAL_ROLLOUTS = 51
@@ -605,7 +604,7 @@ class HeteroGraphEnv:
             t_tardy = torch.sum(torch.clamp(self.job_completion_time - self.due_dates_tensor, min=0))
 
             # The terminal reward is normalised by the size and the scale of the instance, exactly
-            # as in PPO_HGAT.PPO_HGAT: the fixed divisors this script carried (c_max/100, lb/50,
+            # as in HGHRL.HGHRL: the fixed divisors this script carried (c_max/100, lb/50,
             n_ops = float(self.op_scheduled.numel())
             global_penalty = (
                 self.cfg.w1 * c_max / (self.global_max_proc_time_tensor * n_ops)
@@ -709,7 +708,7 @@ class HeteroGATLayer(nn.Module):
         self.att_op_mac = nn.Parameter(torch.randn(num_heads, 2*self.d_k + 1))
         self.att_mac_op = nn.Parameter(torch.randn(num_heads, 2*self.d_k + 1))
         # Disjunctive (machine competition) channel, identical to the one of the trained proposed
-        # method (PPO_HGAT.py).  This study re-implements the pipeline so that no checkpoint is
+        # method (HGHRL.py).  This study re-implements the pipeline so that no checkpoint is
         self.att_disj = nn.Parameter(torch.randn(num_heads, 2*self.d_k + 1))
 
         self.leaky = nn.LeakyReLU(0.2)
@@ -750,7 +749,7 @@ class HeteroGATLayer(nn.Module):
             scores = self.leaky(scores)
             if gate:
                 # Gate of the conjunctive channel, applied to the raw score exactly as the trained
-                # method applies it (PPO_HGAT.HeteroGATLayer.apply_attn places the stability
+                # method applies it (HGHRL.HeteroGATLayer.apply_attn places the stability
                 weight = torch.sigmoid(scores).to(dtype)
                 weighted = (h_s * weight.unsqueeze(-1)).to(dtype)
                 out_buffer.index_add_(0, dst_idx, weighted)
@@ -2095,6 +2094,7 @@ def parameter_sensitivity_scan():
     print("\nPlot saved as parameter_sensitivity.png, tables saved as CSV files.")
 
 if __name__ == "__main__":
+    os.makedirs(FIGURE_DIR, exist_ok=True)
     parameter_sensitivity_scan()
 
 

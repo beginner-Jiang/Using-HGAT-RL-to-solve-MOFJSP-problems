@@ -1,6 +1,19 @@
 # Project Documentation: Multi-Objective Flexible Job Shop Scheduling (MOFJSP)
 
-This project implements various methods for solving the Multi-Objective Flexible Job Shop Scheduling Problem (MOFJSP), including heuristic rules, metaheuristics, and deep reinforcement learning approaches, and proposes the **HGAT+PPO** (Heterogeneous Graph Attention Network + Proximal Policy Optimization) framework. The code reproduces the experiments reported in the paper, including the secondary makespan-only validation on the original Brandimarte and Lawrence instances.
+This project implements various methods for solving the Multi-Objective Flexible Job Shop Scheduling Problem (MOFJSP), including heuristic rules, metaheuristics, and deep reinforcement learning approaches, and proposes the **HGHRL** (Heterogeneous Graph and Hierarchical Reinforcement Learning) framework. The code reproduces the experiments reported in the paper, including the secondary makespan-only validation on the original Brandimarte and Lawrence instances.
+
+The name HGHRL reflects the two core ingredients of the framework: a heterogeneous graph representation of the scheduling state and a hierarchical reinforcement-learning policy for operation selection and machine assignment.
+
+## HGHRL at a glance
+
+HGHRL is the complete scheduling framework proposed in this repository, rather than a single encoder or a single policy network. It combines four elements:
+
+- a heterogeneous disjunctive graph that represents operation precedence, machine eligibility and machine contention in one state;
+- a heterogeneous graph attention encoder (HGAT) that distinguishes node and edge types and uses edge attributes in message passing;
+- a two-level decision structure in which the upper policy selects the next operation and the lower policy assigns an eligible machine;
+- PPO with a clipped objective and an adaptive KL penalty, trained with a weighted reward over makespan, load balance and total tardiness.
+
+In the code, `HGAT` denotes the encoder, `PPO+KL` denotes the optimizer, and `HGHRL` denotes the complete method. The baseline names such as `GAT+PPO`, `MLP+PPO` and `MLP+DQN` are kept unchanged so that the comparison remains readable. The training entry point is `HGHRL/HGHRL.py`; `HGHRL_Test.py` and `HGHRL_Validation.py` provide the corresponding test and validation workflows. The deployed checkpoint is stored at `model/hghrl/hghrl_best.pth`.
 
 ---
 
@@ -25,7 +38,7 @@ Multiple solution methods are implemented and compared to validate the effective
 | `Heuristic/` | Six heuristic rules (SPT, EDD, LBD, FIFO, MOPNR, MWKR) |
 | `Meta_Heuristic/` | Multi-objective metaheuristics (MOEA/D, NSGA-II, NSGA-III, RVEA) |
 | `DRL/` | Deep reinforcement learning baselines (MLP+DQN, MLP+PPO, GAT+PPO, HGNN, DAN, RESCHED) |
-| `PPO_HGAT/` | Proposed HGAT+PPO method, parameter, ablation, weight and complexity studies |
+| `HGHRL/` | Proposed HGHRL method, parameter, ablation, weight and complexity studies |
 | `Compare_Experiment/` | Main comparison experiments (`Experiment1.py`, `Experiment2.py`) |
 | `PublicBenchmarkValidation/` | Public makespan-only validation: common utilities, Experiment1-3 |
 | `Public_DataSet/` | Original Brandimarte and Lawrence files used by the public validation |
@@ -73,16 +86,17 @@ Located in `DRL/`:
 
 Trained weights are stored under `model/`.
 
-### 4.4 Proposed Method: HGAT+PPO
-Located in `PPO_HGAT/`:
-- `PPO_HGAT.py`: main training script.
+### 4.4 Proposed Method: HGHRL
+Located in `HGHRL/`:
+- `HGHRL.py`: main training script and the canonical implementation of the graph environment, HGAT encoder and hierarchical policies.
+- `HGHRL_Test.py` and `HGHRL_Validation.py`: evaluation-oriented entry points for checkpoint testing and validation.
 - `Gantt_Chart.py`: Gantt chart for a 100x30 instance.
 - `Param_Experiment/`: parameter sensitivity, joint hyperparameter validation and the proposed-method validation.
 - `Ablation_Experiment/`: ablation study.
 - `Multi-objective_Weight_Experiment/`: weight analysis.
 - `Time_Space_Complexity_Analysis/`: time and space complexity measurements.
 
-Key features: heterogeneous disjunctive graph with operation and machine nodes and three edge types; heterogeneous graph attention encoder; hierarchical operation-selection / machine-assignment policy trained with PPO+KL.
+The implementation is organized around a single canonical environment and network definition in `HGHRL/HGHRL.py`; the experiment scripts import that definition rather than maintaining separate copies. This keeps the graph construction, feature layout, feasibility mask and checkpoint format consistent across training, comparison and public validation. The graph contains operation and machine nodes, three edge types and dynamic edge features; the encoder is HGAT; the decision process separates operation selection from machine assignment; and the optimizer is PPO with a KL penalty.
 
 ---
 
@@ -107,8 +121,8 @@ python DQN_MLP.py
 python PPO_MLP.py
 python PPO_GAT.py
 
-cd ../PPO_HGAT
-python PPO_HGAT.py
+cd ../HGHRL
+python HGHRL.py
 ```
 
 ### 5.4 Main Comparison Experiments
@@ -120,7 +134,7 @@ python Experiment2.py
 
 ### 5.5 Ablation, Parameter and Complexity Studies
 ```
-cd PPO_HGAT
+cd HGHRL
 python Param_Experiment/Param.py
 python Ablation_Experiment/evaluate.py
 python Multi-objective_Weight_Experiment/Multi_Objective_Weight.py
@@ -129,7 +143,7 @@ python Time_Space_Complexity_Analysis/Time_Space_Complexity.py
 
 ### 5.6 Gantt Chart
 ```
-cd PPO_HGAT
+cd HGHRL
 python Gantt_Chart.py
 ```
 
@@ -162,7 +176,7 @@ All experimental results are saved under `Figure_And_File/`:
 |--------------|----------|
 | `Heuristic/` | Gantt charts and metric files for each rule |
 | `Meta_Heuristic/` | Convergence curves, Pareto fronts and Gantt charts |
-| `PPO_HGAT/` | Gantt chart, parameter, ablation, weight and complexity outputs |
+| `HGHRL/` | Gantt chart, parameter, ablation, weight and complexity outputs |
 | `Compare_Experiment/` | Comparison experiment tables and figures |
 | `PublicBenchmarkValidation/Combined/` | Public validation tables and figures for Experiment1-3 |
 
@@ -176,9 +190,9 @@ All experimental results are saved under `Figure_And_File/`:
 | MLP+PPO | `model/ppo/ppo_model.pth` | Trained PPO+MLP model |
 | GAT+PPO | `model/ppo_gat/ppo_gat_best.pth` | Trained PPO+GAT model |
 | HGNN / DAN / RESCHED | `model/hgnn/`, `model/dan/`, `model/resched/` | Graph baseline weights |
-| **HGAT+PPO** | `model/ppo_hgat/ppo_hgat_best.pth` | **Best model of the proposed method** |
-| Public adaptation | `Public_DataSet/PublicBenchmarkValidation/checkpoints/Lawrence/ppo_hgat_public_best_gentle.pth` | Selected public-adaptation checkpoint |
-| A1-A5 | `PPO_HGAT/Ablation_Experiment/model/A{1..5}/best.pth` | Ablation variants |
+| **HGHRL** | `model/hghrl/hghrl_best.pth` | **Best model of the proposed method** |
+| Public adaptation | `Public_DataSet/PublicBenchmarkValidation/checkpoints/Lawrence/hghrl_public_best_gentle.pth` | Selected public-adaptation checkpoint |
+| A1-A5 | `HGHRL/Ablation_Experiment/model/A{1..5}/best.pth` | Ablation variants |
 
 ---
 

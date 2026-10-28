@@ -1,5 +1,5 @@
 """
-PPO+HGAT Ablation Study Training
+HGHRL Ablation Study Training
 Trains experiments A1~A4, A5 directly copies the pre-trained model.
 """
 
@@ -8,6 +8,13 @@ Trains experiments A1~A4, A5 directly copies the pre-trained model.
 # same recipe and the same checkpoints as the managed queue (_Review/_p97_train_ablation.py with
 # _p97_ablation_arm.py) and never bypasses them.  The managed queue is the advised path because
 # it resumes and gates the arms; this file stays for a single-machine rerun of one session.
+
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 
 from common import EXPERIMENTS, train_experiment, cfg
 

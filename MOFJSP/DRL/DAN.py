@@ -7,7 +7,7 @@ and Learning Systems, vol. 35, no. 3, pp. 3091-3102, 2024.
 
 Fair-comparison notes:
   * the instance reader, the scheduling environment (``HeteroGraphEnv``) and the multi-objective
-    reward are reused verbatim from the proposed HGAT+PPO method (``PPO_HGAT.PPO_HGAT``), so all
+    reward are reused verbatim from the proposed HGHRL method (``HGHRL.HGHRL``), so all
     methods share the same state transition, the same evaluation protocol and the same objective
     weights;
   * the hierarchical policy of the proposed method is replaced by a **single-level policy** that
@@ -54,7 +54,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from PPO_HGAT.PPO_HGAT import (
+from HGHRL.HGHRL import (
     read_fjsp_instance,
     load_all_instances,
     MOFJSPInstance,
@@ -115,11 +115,11 @@ class Config:
     # episode 4000: the second half of that run trained with a step size two orders of magnitude
     lr_decay_steps = 3000
     gamma = 0.99
-    # Undiscounted return, see the note in PPO_HGAT.py: the objective is only complete at the end
+    # Undiscounted return, see the note in HGHRL.py: the objective is only complete at the end
     # of the schedule, and gamma 0.99 hides that signal from the early decisions of a 400 step
     gamma = 1.0
     gae_lambda = 0.95
-    # Monte-Carlo advantage, see the note in PPO_HGAT.py: the objective of a schedule is decided by
+    # Monte-Carlo advantage, see the note in HGHRL.py: the objective of a schedule is decided by
     # the whole sequence and this baseline degrades fastest where the sequence is longest.
     gae_lambda = 1.0
     clip_ratio = 0.1

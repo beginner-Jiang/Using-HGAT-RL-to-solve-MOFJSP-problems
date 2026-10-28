@@ -1,5 +1,5 @@
 """
-PPO+HGAT Ablation Study Common Module
+HGHRL Ablation Study Common Module
 Contains all shared classes, functions, and configurations.
 """
 
@@ -54,7 +54,7 @@ BASE_MODEL_DIR = os.path.join(CURRENT_DIR, "model")
 os.makedirs(BASE_MODEL_DIR, exist_ok=True)
 
 # A5 full model path (pre-trained)
-A5_MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "ppo_hgat", "ppo_hgat_best.pth")
+A5_MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "hghrl", "hghrl_best.pth")
 
 # Experiment definitions.
 # Every variant shares the single Config object below, so its network width cannot be inherited
@@ -183,11 +183,11 @@ class Config:
     gat_out_dim = 128
     policy_hidden_dim = 128
     value_clip = None
-    # Enabled for the same reason as in PPO_HGAT.py: the value term of this family diverges
+    # Enabled for the same reason as in HGHRL.py: the value term of this family diverges
     # without a bound (the GAT baseline printed a total loss of 1.1e6) and its gradient then
     # dominates the encoder that the policy shares with the critic.
     value_clip = 0.5
-    # Back to None for the same reason as in PPO_HGAT.py: this file shares the update structure of
+    # Back to None for the same reason as in HGHRL.py: this file shares the update structure of
     # the proposed method, whose value-clip branch reads "values" from the enclosing scope - a name
     value_clip = 0.5
     # The method itself is trained without the clip, on a measurement of its own recipe of the same
@@ -204,7 +204,7 @@ class Config:
     # Collected instances.  The value was ten, which is above what a single run of this family was
     # measured to hold once the curriculum reaches the large instances (sixteen environments at
     num_envs = 6
-    # Mixed precision is off.  The proposed method trains in full precision (see PPO_HGAT.Config),
+    # Mixed precision is off.  The proposed method trains in full precision (see HGHRL.Config),
     # so the arms have to as well, and with half precision the policy update of every arm that does
     amp_enabled = False
 
@@ -221,12 +221,12 @@ class Config:
     val_tol = 0.02
     select_window = 100
     # No early stop before this budget: the window has to open before the peak of the run.
-    # The guard is the one of the trainer, i.e. PPO_HGAT.Config.min_episodes = 1500; the value here
+    # The guard is the one of the trainer, i.e. HGHRL.Config.min_episodes = 1500; the value here
     min_episodes = 1500
     # The curriculum advances on a fixed episode scale instead of on the episode budget, so the
     # schedule does not change when the budget of the run is changed.
     curriculum_episodes = 2500
-    # Aligned with every baseline of the study, for the reason recorded in PPO_HGAT.py: the scale
+    # Aligned with every baseline of the study, for the reason recorded in HGHRL.py: the scale
     # decides when the curriculum introduces the medium and the large instances, i.e. the training
     curriculum_episodes = 4000
     # Floor of the entropy coefficient: the decay alone would make the policy deterministic long
@@ -1953,7 +1953,7 @@ class PPOAgent:
             returns = returns.detach()
 
             # `values` is kept for the value-clip branch of the chunk loop below, for the reason
-            # recorded in PPO_HGAT.py: deleting it made the clip unusable and the arms then trained
+            # recorded in HGHRL.py: deleting it made the clip unusable and the arms then trained
             # without a bound on the value term.
             del h_op_all, h_mac_all, batch_state_dict, state_slices, g_embs, next_values, deltas, rev_deltas, rev_advantages
             # The lower level of every arm is updated with the advantage of the upper level, exactly
