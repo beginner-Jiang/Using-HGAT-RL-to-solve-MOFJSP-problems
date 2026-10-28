@@ -15,6 +15,15 @@ HGHRL is the complete scheduling framework proposed in this repository, rather t
 
 In the code, `HGAT` denotes the encoder, `PPO+KL` denotes the optimizer, and `HGHRL` denotes the complete method. The baseline names such as `GAT+PPO`, `MLP+PPO` and `MLP+DQN` are kept unchanged so that the comparison remains readable. The training entry point is `HGHRL/HGHRL.py`; `HGHRL_Test.py` and `HGHRL_Validation.py` provide the corresponding test and validation workflows. The deployed checkpoint is stored at `model/hghrl/hghrl_best.pth`.
 
+## Computational environment
+
+The experiments were run in two complementary environments:
+
+- **Local workstation:** Windows 11 Home 64-bit (build 26200), an Intel Core i7-13700H processor (14 cores and 20 logical threads), 16 GB of system memory, and an NVIDIA GeForce RTX 4060 Laptop GPU with 8188 MiB of graphics memory. The local Python environment used Python 3.9.1, PyTorch 2.4.1 with CUDA 12.1, and NumPy 1.23.1.
+- **Cloud parameter-sweep node:** an AutoDL instance with an NVIDIA RTX 2080 Ti GPU (11 GB), 12 vCPUs, 43 GB of system memory, and a 50 GB data disk mounted at `/root/autodl-tmp`. The cloud-side code and outputs were kept under `/root/autodl-tmp/MOFJSP`; the parameter sweep used a Python 3.10 conda environment and a CUDA 12.1 PyTorch build.
+
+The cloud node was used for the parallel parameter-sensitivity runs, where several configurations can be evaluated concurrently and the GPU memory budget is the limiting resource. The local workstation was used for model development, comparison experiments, public-benchmark validation and figure generation. Smaller instances can also run on CPU, but GPU execution is recommended for the full training and evaluation protocol.
+
 ---
 
 ## 1. Project Overview
